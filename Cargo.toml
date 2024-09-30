@@ -1,0 +1,11 @@
+[package]
+name = "uv-migrator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0.210" , features = ["derive"] }
+toml = "0.8.19"
+log = "0.4"
+env_logger = "0.10"
+which = "6.0.3"
