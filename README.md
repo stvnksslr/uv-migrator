@@ -1,6 +1,8 @@
 # UV Migrator
 
-UV Migrator is a Rust-based tool designed to facilitate the migration of Python projects from various dependency management systems (like Poetry or PEP 621) to the UV package manager. This tool automates the process of creating a new UV-based project structure while preserving existing dependencies.
+UV Migrator is a Rust-based tool designed to facilitate the migration of Python projects from various dependency
+management systems (like Poetry or PEP 621) to the UV package manager. This tool automates the process of creating a new
+UV-based project structure while preserving existing dependencies.
 
 ## Features
 
@@ -13,6 +15,7 @@ UV Migrator is a Rust-based tool designed to facilitate the migration of Python 
 ## Prerequisites
 
 Before you begin, ensure you have the following installed:
+
 - Rust (latest stable version)
 - UV package manager
 
@@ -36,13 +39,7 @@ The compiled binary will be available in the `target/release` directory.
 Run the UV Migrator with the path to your existing `pyproject.toml` file:
 
 ```
-./target/release/uv-migrator path/to/your/pyproject.toml
-```
-
-For more detailed logging, you can set the `RUST_LOG` environment variable:
-
-```
-RUST_LOG=debug ./target/release/uv-migrator path/to/your/pyproject.toml
+uv-migrator path/to/your/pyproject.toml
 ```
 
 ## How It Works
@@ -50,11 +47,9 @@ RUST_LOG=debug ./target/release/uv-migrator path/to/your/pyproject.toml
 1. Renames your existing `pyproject.toml` to `old.pyproject.toml`.
 2. A new UV-based project is initialized in the same directory.
 3. The tool parses the `old.pyproject.toml` file and extracts all dependencies.
-4. These dependencies are then installed in the new UV-based project, maintaining the distinction between main and development dependencies.
-
-## Configuration
-
-The UV Migrator doesn't require any additional configuration. It derives all necessary information from your existing `pyproject.toml` file.
+4. These dependencies are then installed in the new UV-based project, maintaining the distinction between main and
+   development dependencies.
+5. all additional configs from a pyproject.toml will need to be added by hand
 
 ## Troubleshooting
 
@@ -63,7 +58,8 @@ If you encounter any issues:
 1. Ensure you have the latest version of UV installed.
 2. Check that your `pyproject.toml` file is valid and follows either the Poetry or PEP 621 format.
 3. Run the tool with debug logging enabled (`RUST_LOG=debug`) for more detailed output.
-4. If the issue persists, please open an issue on the GitHub repository with the full debug output and a description of the problem.
+4. If the issue persists, please open an issue on the GitHub repository with the full debug output and a description of
+   the problem.
 
 ## Contributing
 

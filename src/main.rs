@@ -115,21 +115,34 @@ fn create_new_pyproject(project_dir: &Path) -> Result<(), String> {
 
     let output = Command::new(&uv_path)
         .arg("init")
+        .arg("--no-pin-python")
         .output()
         .map_err(|e| format!("create_new_pyproject: Failed to execute uv init: {}", e))?;
+
+    if output.status.success() {
+        info!("create_new_pyproject: Successfully initialized new project with uv init");
+
+        // Delete hello.py if it exists
+        let hello_py_path = target_dir.join("hello.py");
+        if hello_py_path.exists() {
+            fs::remove_file(&hello_py_path)
+                .map_err(|e| format!("Failed to delete hello.py: {}", e))?;
+            info!("create_new_pyproject: Deleted hello.py file");
+        } else {
+            info!("create_new_pyproject: hello.py file not found, skipping deletion");
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("create_new_pyproject: uv init failed: {}", stderr));
+    }
 
     // Change back to the original directory
     env::set_current_dir(&original_dir)
         .map_err(|e| format!("Failed to change back to original directory: {}", e))?;
 
-    if output.status.success() {
-        info!("create_new_pyproject: Successfully initialized new project with uv init");
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("create_new_pyproject: uv init failed: {}", stderr))
-    }
+    Ok(())
 }
+
 
 fn add_dependencies(deps: &[String], dev: bool) -> Result<(), String> {
     if deps.is_empty() {
