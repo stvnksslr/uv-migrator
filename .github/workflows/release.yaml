@@ -1,8 +1,8 @@
 on:
   # Indicates I want to run this workflow on all branches, PR, and tags
   push:
-    branches: ["**"]
-    tags: ["*"]
+    branches: [ "**" ]
+    tags: [ "*" ]
   pull_request:
     branches: [ "main" ]
 
@@ -95,7 +95,7 @@ jobs:
 
   release:
     name: Release
-    needs: [build]
+    needs: [ build ]
     # We run the release job only if a tag starts with 'v' letter
     if: startsWith( github.ref, 'refs/tags/v' )
     runs-on: ubuntu-22.04
@@ -110,9 +110,9 @@ jobs:
 
       # Goreleaser
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
