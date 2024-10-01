@@ -93,6 +93,7 @@ jobs:
           path: target/${{ matrix.platform.target }}/release/${{ env.BIN_NAME }}${{ contains(matrix.platform.target, 'windows') && '.exe' || '' }}
           retention-days: 1
 
+
   release:
     name: Release
     needs: [ build ]
@@ -119,4 +120,4 @@ jobs:
           # Run goreleaser and ignore non-committed files (downloaded artifacts)
           args: release --clean --skip=validate
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN_RUST_CROSS }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
