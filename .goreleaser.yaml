@@ -1,4 +1,5 @@
-project_name: example
+version: 2
+project_name: uv-migrator
 builds:
   - main: goreleaser.go
     goos:
