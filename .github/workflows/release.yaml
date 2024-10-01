@@ -40,5 +40,6 @@ jobs:
       - name: Publish artifacts and release
         uses: houseabsolute/actions-rust-release@v0
         with:
+          changes-file: ""
           target: ${{ matrix.platform.target }}
           executable-name: 'uv-migrator'
