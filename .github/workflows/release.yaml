@@ -41,5 +41,6 @@ jobs:
         uses: houseabsolute/actions-rust-release@v0
         with:
           changes-file: ""
+          archive-name: "uv-migrator - ${{ matrix.platform.target }}"
           target: ${{ matrix.platform.target }}
           executable-name: 'uv-migrator'
