@@ -1,0 +1,25 @@
+project_name: example
+builds:
+  - main: goreleaser.go
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    binary: uv-migrator
+    ignore:
+      - goos: windows
+        goarch: arm64
+    hooks:
+      post:
+        - ./.goreleaser_hook.sh {{ .Arch }} {{ .Os }} {{ .ProjectName }}
+checksum:
+  name_template: "checksums.txt"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"  
