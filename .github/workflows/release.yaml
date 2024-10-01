@@ -1,46 +1,122 @@
 on:
+  # Indicates I want to run this workflow on all branches, PR, and tags
   push:
-    tags: [ 'v*.*.*' ]
+    branches: ["**"]
+    tags: ["*"]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  # Define the rust version to use
+  RUST_VERSION: 1.81.1
+  # Rust build arguments
+  BUILD_ARGS: "--release --all-features"
+  # The binary name
+  BIN_NAME: "uv-migrator"
+  # Docker token required to pull images from DockerHub
+  DOCKER_LOGIN: ${{ secrets.DOCKER_LOGIN }}
+  DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
 
 jobs:
-  release:
-    name: Release - ${{ matrix.platform.target }}
+  build:
+    name: Build - ${{ matrix.platform.name }}
+    # By default, runs on Ubuntu, otherwise, override with the desired os
+    runs-on: ${{ matrix.platform.os || 'ubuntu-22.04' }}
     strategy:
       matrix:
+        # Set platforms you want to build your binaries on
         platform:
-          - os_name: Windows-x86_64
+          # Linux
+          # The name is used for pretty print
+          - name: Linux x86_64
+            # The used Rust target architecture
+            target: x86_64-unknown-linux-gnu
+          - name: Linux aarch64
+            target: aarch64-unknown-linux-gnu
+
+          # Mac OS
+          - name: MacOS x86_64
+            target: x86_64-apple-darwin
+          - name: MacOS aarch64
+            target: aarch64-apple-darwin
+
+          # Windows
+          - name: Windows x86_64
+            # Use another GitHub action OS
             os: windows-latest
             target: x86_64-pc-windows-msvc
 
-          - os_name: Linux-x86_64
-            os: ubuntu-20.04
-            target: x86_64-unknown-linux-musl
-
-          - os_name: macOS-x86_64
-            os: macOS-latest
-            target: x86_64-apple-darwin
-
-          - os_name: macOS-aarch64
-            os: macOS-latest
-            target: aarch64-apple-darwin
-
-    runs-on: ${{ matrix.platform.os }}
     steps:
-      - name: Checkout
+      - name: Checkout Git repo
         uses: actions/checkout@v4
 
-      - name: Build binary
-        uses: houseabsolute/actions-rust-cross@v0
+      # Linux & Windows
+      - name: Install rust toolchain
+        if: ${{ !contains(matrix.platform.target, 'apple') }}
+        uses: actions-rs/toolchain@v1
         with:
-          command: ${{ matrix.platform.command }}
+          # We setup Rust toolchain and the desired target
+          profile: minimal
+          toolchain: "${{ env.RUST_VERSION }}"
+          override: true
           target: ${{ matrix.platform.target }}
-          args: "--locked --release"
-          strip: true
+          components: rustfmt, clippy
+      - name: Build ${{ matrix.platform.name }} binary
+        if: ${{ !contains(matrix.platform.target, 'apple') }}
+        uses: actions-rs/cargo@v1
+        # We use cross-rs if not running on x86_64 architecture on Linux
+        with:
+          command: build
+          use-cross: ${{ !contains(matrix.platform.target, 'x86_64') }}
+          args: ${{ env.BUILD_ARGS }} --target ${{ matrix.platform.target }}
 
-      - name: Publish artifacts and release
-        uses: houseabsolute/actions-rust-release@v0
+      # Mac OS
+      - name: Login to DockerHub
+        if: contains(matrix.platform.target, 'apple')
+        # We log on DockerHub
+        uses: docker/login-action@v3
         with:
-          changes-file: ""
-          archive-name: "uv-migrator - ${{ matrix.platform.target }}"
-          target: ${{ matrix.platform.target }}
-          executable-name: 'uv-migrator'
+          username: ${{ env.DOCKER_LOGIN }}
+          password: ${{ env.DOCKER_TOKEN }}
+      - name: Build ${{ matrix.platform.name }} binary
+        if: contains(matrix.platform.target, 'apple')
+        # We use a dedicated Rust image containing required Apple libraries to cross-compile on multiple archs
+        run: |
+          docker run --rm --volume "${PWD}":/root/src --workdir /root/src joseluisq/rust-linux-darwin-builder:$RUST_VERSION \
+          sh -c "CC=o64-clang CXX=o64-clang++ cargo build $BUILD_ARGS --target ${{ matrix.platform.target }}"
+
+      - name: Store artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # Finally, we store the binary as GitHub artifact for later usage
+          name: ${{ matrix.platform.target }}-${{ env.BIN_NAME }}
+          path: target/${{ matrix.platform.target }}/release/${{ env.BIN_NAME }}${{ contains(matrix.platform.target, 'windows') && '.exe' || '' }}
+          retention-days: 1
+
+  release:
+    name: Release
+    needs: [build]
+    # We run the release job only if a tag starts with 'v' letter
+    if: startsWith( github.ref, 'refs/tags/v' )
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Git repo
+        uses: actions/checkout@v3
+
+      # Download all artifacts
+      - uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      # Goreleaser
+      - name: Set up Go
+        uses: actions/setup-go@v4
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          distribution: goreleaser
+          version: latest
+          # Run goreleaser and ignore non-committed files (downloaded artifacts)
+          args: release --clean --skip=validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN_RUST_CROSS }}
