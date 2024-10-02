@@ -1,5 +1,4 @@
 version: 2
-project_name: uv-migrator
 builds:
   - main: goreleaser.go
     goos:
@@ -16,11 +15,12 @@ builds:
     hooks:
       post:
         - ./.goreleaser_hook.sh {{ .Arch }} {{ .Os }} {{ .ProjectName }}
-checksum:
-  name_template: "checksums.txt"
+
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"  
+  disable: true
+
+checksum:
+  disable: true
+
+
+
