@@ -39,7 +39,12 @@ The compiled binary will be available in the `target/release` directory.
 Run the UV Migrator with the path to your existing `pyproject.toml` file:
 
 ```
-uv-migrator path/to/your/pyproject.toml
+uv-migrator path/to/your/pyproject.toml/location
+```
+or
+```
+1. cd /to/project
+2. uv-migrator .
 ```
 
 ## How It Works
