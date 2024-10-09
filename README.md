@@ -9,6 +9,7 @@ UV-based project structure while preserving existing dependencies.
 - Supports migration from Poetry and PEP 621 project structures
 - Creates a new virtual environment using UV
 - Automatically transfers dependencies from the existing `pyproject.toml` to the new UV-based project
+- Attempts to migrate all [tool.*] configs to the new `pyproject.toml` file
 - Handles both main and development dependencies
 - Provides detailed logging for transparency and debugging
 
@@ -21,18 +22,20 @@ Before you begin, ensure you have the following installed:
 
 ## Installation
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/uv-migrator.git
-   cd uv-migrator
-   ```
-
-2. Build the project:
-   ```
-   cargo build --release
-   ```
+`cargo install uv-migrator`
 
 The compiled binary will be available in the `target/release` directory.
+
+## Supported Package Managers
+
+* poetry
+* pip
+
+## In Progress
+
+* PDM
+* Hatch
+* Open Issues for more!
 
 ## Usage
 
@@ -41,7 +44,9 @@ Run the UV Migrator with the path to your existing `pyproject.toml` file:
 ```
 uv-migrator path/to/your/pyproject.toml/location
 ```
+
 or
+
 ```
 1. cd /to/project
 2. uv-migrator .
@@ -55,21 +60,3 @@ or
 4. These dependencies are then installed in the new UV-based project, maintaining the distinction between main and
    development dependencies.
 5. all additional configs from a pyproject.toml will need to be added by hand
-
-## Troubleshooting
-
-If you encounter any issues:
-
-1. Ensure you have the latest version of UV installed.
-2. Check that your `pyproject.toml` file is valid and follows either the Poetry or PEP 621 format.
-3. Run the tool with debug logging enabled (`RUST_LOG=debug`) for more detailed output.
-4. If the issue persists, please open an issue on the GitHub repository with the full debug output and a description of
-   the problem.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
