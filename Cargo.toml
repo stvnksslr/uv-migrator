@@ -1,7 +1,13 @@
 [package]
 name = "uv-migrator"
-version = "0.1.0"
+version = "2024.2.0"
 edition = "2021"
+authors = ["stvnksslr@gmail.com"]
+description = "Tool for converting various python package soltutions to use the uv solution by astral"
+license = "MIT"
+repository = "https://github.com/stvnksslr/uv-migrator"
+readme = "README.md"
+keywords = ["python", "uv"]
 
 [dependencies]
 env_logger = "0.11.5"
