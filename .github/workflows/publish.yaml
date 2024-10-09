@@ -1,9 +1,8 @@
+name: publish
+
 on:
-  push:
-    branches: [ "**" ]
-    tags: [ "*" ]
-  pull_request:
-    branches: [ "main" ]
+  release:
+    types: [ published ]
 
 
 permissions:
@@ -21,29 +20,23 @@ env:
 jobs:
   build:
     name: Build - ${{ matrix.platform.name }}
-    # By default, runs on Ubuntu, otherwise, override with the desired os
     runs-on: ${{ matrix.platform.os || 'ubuntu-22.04' }}
     strategy:
       matrix:
-        # Set platforms you want to build your binaries on
         platform:
-          # Linux
-          # The name is used for pretty print
           - name: Linux x86_64
-            # The used Rust target architecture
             target: x86_64-unknown-linux-gnu
+
           - name: Linux aarch64
             target: aarch64-unknown-linux-gnu
 
-          # Mac OS
           - name: MacOS x86_64
             target: x86_64-apple-darwin
+
           - name: MacOS aarch64
             target: aarch64-apple-darwin
 
-          # Windows
           - name: Windows x86_64
-            # Use another GitHub action OS
             os: windows-latest
             target: x86_64-pc-windows-msvc
 
@@ -51,10 +44,8 @@ jobs:
       - name: Checkout Git repo
         uses: actions/checkout@v4
 
-      # Linux & Windows
       - name: Install rust toolchain
         if: ${{ !contains(matrix.platform.target, 'apple') }}
-        # TODO: replace deprecated
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -62,27 +53,23 @@ jobs:
           override: true
           target: ${{ matrix.platform.target }}
           components: rustfmt, clippy
+
       - name: Build ${{ matrix.platform.name }} binary
         if: ${{ !contains(matrix.platform.target, 'apple') }}
-        # TODO: replace deprecated
         uses: actions-rs/cargo@v1
-        # We use cross-rs if not running on x86_64 architecture on Linux
         with:
           command: build
           use-cross: ${{ !contains(matrix.platform.target, 'x86_64') }}
           args: ${{ env.BUILD_ARGS }} --target ${{ matrix.platform.target }}
 
-      # Mac OS
       - name: Login to DockerHub
         if: contains(matrix.platform.target, 'apple')
-        # We log on DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ env.DOCKER_LOGIN }}
           password: ${{ env.DOCKER_TOKEN }}
       - name: Build ${{ matrix.platform.name }} binary
         if: contains(matrix.platform.target, 'apple')
-        # We use a dedicated Rust image containing required Apple libraries to cross-compile on multiple archs
         run: |
           docker run --rm --volume "${PWD}":/root/src --workdir /root/src joseluisq/rust-linux-darwin-builder:$RUST_VERSION \
           sh -c "CC=o64-clang CXX=o64-clang++ cargo build $BUILD_ARGS --target ${{ matrix.platform.target }}"
@@ -90,7 +77,6 @@ jobs:
       - name: Store artifact
         uses: actions/upload-artifact@v4
         with:
-          # Finally, we store the binary as GitHub artifact for later usage
           name: ${{ matrix.platform.target }}-${{ env.BIN_NAME }}
           path: target/${{ matrix.platform.target }}/release/${{ env.BIN_NAME }}${{ contains(matrix.platform.target, 'windows') && '.exe' || '' }}
           retention-days: 1
@@ -123,22 +109,3 @@ jobs:
           args: release --clean --skip=validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  release-plz:
-    name: Release-plz
-    runs-on: ubuntu-latest
-    needs: [ build ]
-    if: startsWith( github.ref, 'refs/tags/v' )
-    concurrency:
-      group: release-plz-${{ github.ref }}
-      cancel-in-progress: false
-    steps:
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Run release-plz
-        uses: MarcoIeni/release-plz-action@v0.5
-        with:
-          command: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
