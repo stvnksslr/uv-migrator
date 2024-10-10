@@ -9,9 +9,7 @@ permissions:
   contents: write
 
 env:
-  RUST_VERSION: "stable"
   BIN_NAME: "uv-migrator"
-  # OS SUPPORT
   MACOS_VERSION: macos-13
   LINUX_VERSION: ubuntu-22.04
   WINDOWS_VERSION: windows-2022
@@ -26,22 +24,22 @@ jobs:
         include:
           # Arm
           - target: aarch64-unknown-linux-gnu
-            os: ${{ LINUX_VERSION }}
+            os: ${{ env.LINUX_VERSION }}
           - target: aarch64-unknown-linux-musl
-            os: ${{ LINUX_VERSION }}
+            os: ${{ env.LINUX_VERSION }}
           - target: aarch64-apple-darwin
-            os: ${{ MACOS_VERSION }}
+            os: ${{ env.MACOS_VERSION }}
           - target: aarch64-pc-windows-msvc
-            os: ${{WINDOWS_VERSION}}
+            os: ${{ env.WINDOWS_VERSION }}
           # x86
           - target: x86_64-unknown-linux-gnu
-            os: ${{ LINUX_VERSION }}
+            os: ${{ env.LINUX_VERSION }}
           - target: x86_64-unknown-linux-musl
-            os: ${{ LINUX_VERSION }}
+            os: ${{ env.LINUX_VERSION }}
           - target: x86_64-apple-darwin
-            os: ${{ MACOS_VERSION }}
+            os: ${{ env.MACOS_VERSION }}
           - target: x86_64-pc-windows-msvc
-            os: ${{WINDOWS_VERSION}}
+            os: ${{ env.WINDOWS_VERSION }}
 
     steps:
       - name: Checkout Git repo
@@ -64,7 +62,7 @@ jobs:
 
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: ${{BIN_NAME}}
+          bin: ${{ env.BIN_NAME }}
           target: ${{ matrix.target }}
           tar: all
           zip: windows
