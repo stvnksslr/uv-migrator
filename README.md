@@ -35,6 +35,7 @@ The compiled binary will be available in the `target/release` directory.
 
 * PDM
 * Hatch
+* pipenv
 * Open Issues for more!
 
 ## Usage
