@@ -1,43 +1,160 @@
 use crate::types::PyProject;
 use crate::utils::{create_virtual_environment, find_pyproject_toml, format_dependency, should_include_dependency};
-use log::{debug, info};
+use log::{debug, info, warn};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::fs::OpenOptions;
-use std::path::{Path};
-use std::process::{Command, exit};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub fn run_migration(project_dir: &Path) -> Result<(), String> {
-    let file_path = match find_pyproject_toml(project_dir) {
-        Some(path) => path,
-        None => return Err("No pyproject.toml found in the specified directory".to_string()),
-    };
-
     info!("Project directory: {:?}", project_dir);
-    info!("pyproject.toml path: {:?}", file_path);
-
-    let contents = fs::read_to_string(&file_path)
-        .map_err(|e| format!("Error reading file '{}': {}", file_path.display(), e))?;
-
-    let pyproject: PyProject = toml::from_str(&contents)
-        .map_err(|e| format!("Error parsing TOML in '{}': {}", file_path.display(), e))?;
-
-    if !check_for_poetry_section(&pyproject) {
-        info!("Poetry section not found in pyproject.toml. Nothing to migrate.");
-        exit(0);
-    }
 
     create_virtual_environment()?;
-    rename_pyproject(&file_path)?;
-    let old_pyproject_path = file_path.with_file_name("old.pyproject.toml");
+
+    let (main_deps, dev_deps, had_pyproject) = detect_and_migrate(project_dir)?;
+
+    // Create new pyproject.toml
     create_new_pyproject(project_dir)?;
 
-    add_all_dependencies(&pyproject)?;
+    // Add dependencies
+    add_all_dependencies(&main_deps, &dev_deps)?;
 
-    let new_pyproject_path = project_dir.join("pyproject.toml");
-    append_tool_sections(&old_pyproject_path, &new_pyproject_path)?;
+    // Append tool sections if migrated from pyproject.toml
+    if had_pyproject {
+        let old_pyproject_path = project_dir.join("old.pyproject.toml");
+        let new_pyproject_path = project_dir.join("pyproject.toml");
+        if old_pyproject_path.exists() {
+            append_tool_sections(&old_pyproject_path, &new_pyproject_path)?;
+        } else {
+            info!("Expected old pyproject.toml not found. Skipping tool section appending.");
+        }
+    } else {
+        info!("No original pyproject.toml found. Skipping tool section appending.");
+    }
 
     Ok(())
+}
+
+fn detect_and_migrate(project_dir: &Path) -> Result<(Vec<String>, Vec<String>, bool), String> {
+    let pyproject_path = find_pyproject_toml(project_dir);
+
+    if let Some(pyproject_path) = pyproject_path {
+        if has_poetry_section(&pyproject_path)? {
+            info!("Detected Poetry project. Migrating from pyproject.toml");
+            let (main_deps, dev_deps) = migrate_from_pyproject(&pyproject_path)?;
+            Ok((main_deps, dev_deps, true))
+        } else {
+            warn!("pyproject.toml found but no Poetry section detected. Checking for requirements.txt");
+            let (main_deps, dev_deps) = migrate_from_requirements(project_dir)?;
+            Ok((main_deps, dev_deps, false))
+        }
+    } else {
+        info!("No pyproject.toml found. Checking for requirements files.");
+        let (main_deps, dev_deps) = migrate_from_requirements(project_dir)?;
+        Ok((main_deps, dev_deps, false))
+    }
+}
+
+fn has_poetry_section(pyproject_path: &Path) -> Result<bool, String> {
+    let contents = fs::read_to_string(pyproject_path)
+        .map_err(|e| format!("Error reading file '{}': {}", pyproject_path.display(), e))?;
+
+    let pyproject: PyProject = toml::from_str(&contents)
+        .map_err(|e| format!("Error parsing TOML in '{}': {}", pyproject_path.display(), e))?;
+
+    Ok(pyproject.tool.and_then(|t| t.poetry).is_some())
+}
+
+fn migrate_from_pyproject(pyproject_path: &Path) -> Result<(Vec<String>, Vec<String>), String> {
+    let contents = fs::read_to_string(pyproject_path)
+        .map_err(|e| format!("Error reading file '{}': {}", pyproject_path.display(), e))?;
+
+    let pyproject: PyProject = toml::from_str(&contents)
+        .map_err(|e| format!("Error parsing TOML in '{}': {}", pyproject_path.display(), e))?;
+
+    let (main_deps, dev_deps) = extract_dependencies_from_pyproject(&pyproject)?;
+
+    rename_pyproject(pyproject_path)?;
+
+    Ok((main_deps, dev_deps))
+}
+
+fn migrate_from_requirements(project_dir: &Path) -> Result<(Vec<String>, Vec<String>), String> {
+    let requirements_files = find_requirements_files(project_dir);
+
+    if requirements_files.is_empty() {
+        return Err("No requirements files found. Please ensure you have either a requirements.txt file or a pyproject.toml with a [tool.poetry] section.".to_string());
+    }
+
+    let mut main_deps = Vec::new();
+    let mut dev_deps = Vec::new();
+
+    for file_path in &requirements_files {
+        let file_name = file_path.file_name().unwrap().to_str().unwrap();
+        if file_name == "requirements.txt" {
+            main_deps.push(file_path.to_str().unwrap().to_string());
+        } else {
+            dev_deps.push(file_path.to_str().unwrap().to_string());
+        }
+        info!("Found requirements file: {}", file_path.display());
+    }
+
+    Ok((main_deps, dev_deps))
+}
+
+fn find_requirements_files(dir: &Path) -> Vec<PathBuf> {
+    fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.is_file() && path.file_name().unwrap().to_str().unwrap().starts_with("requirements") {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn extract_dependencies_from_pyproject(pyproject: &PyProject) -> Result<(Vec<String>, Vec<String>), String> {
+    let mut main_deps = Vec::new();
+    let mut dev_deps = Vec::new();
+
+    if let Some(tool) = &pyproject.tool {
+        if let Some(poetry) = &tool.poetry {
+            // Handle Poetry format
+            if let Some(deps) = &poetry.dependencies {
+                main_deps.extend(deps.iter().filter_map(|(dep, value)| {
+                    let formatted = format_dependency(dep, value);
+                    if should_include_dependency(dep, &formatted) {
+                        Some(formatted)
+                    } else {
+                        None
+                    }
+                }));
+            }
+            if let Some(groups) = &poetry.group {
+                for (_, group) in groups {
+                    dev_deps.extend(group.dependencies.iter().filter_map(|(dep, value)| {
+                        let formatted = format_dependency(dep, value);
+                        if should_include_dependency(dep, &formatted) {
+                            Some(formatted)
+                        } else {
+                            None
+                        }
+                    }));
+                }
+            }
+        } else {
+            return Err("No [tool.poetry] section found in pyproject.toml".to_string());
+        }
+    } else {
+        return Err("No [tool] section found in pyproject.toml".to_string());
+    }
+
+    Ok((main_deps, dev_deps))
 }
 
 fn rename_pyproject(pyproject_path: &Path) -> Result<(), String> {
@@ -85,7 +202,10 @@ fn add_dependencies(deps: &[String], dev: bool) -> Result<(), String> {
     if dev {
         command.arg("--dev");
     }
-    command.args(deps);
+
+    for dep in deps {
+        command.arg("--requirements").arg(dep);
+    }
 
     let output = command
         .output()
@@ -100,91 +220,15 @@ fn add_dependencies(deps: &[String], dev: bool) -> Result<(), String> {
     }
 }
 
-fn add_all_dependencies(pyproject: &PyProject) -> Result<(), String> {
-    let mut main_deps = Vec::new();
-    let mut dev_deps = Vec::new();
 
-    if let Some(project) = &pyproject.project {
-        // Handle PEP 621 format
-        if let Some(deps) = &project.dependencies {
-            match deps {
-                toml::Value::Table(table) => {
-                    main_deps.extend(table.iter().map(|(k, v)| format!("{}=={}", k, v)));
-                }
-                toml::Value::Array(array) => {
-                    main_deps.extend(array.iter().filter_map(|v| v.as_str().map(String::from)));
-                }
-                _ => return Err("Unsupported dependency format in [project.dependencies]".to_string()),
-            }
-        }
-        if let Some(optional_deps) = &project.optional_dependencies {
-            for (_, group_deps) in optional_deps {
-                match group_deps {
-                    toml::Value::Table(table) => {
-                        dev_deps.extend(table.iter().map(|(k, v)| format!("{}=={}", k, v)));
-                    }
-                    toml::Value::Array(array) => {
-                        dev_deps.extend(array.iter().filter_map(|v| v.as_str().map(String::from)));
-                    }
-                    _ => return Err("Unsupported dependency format in [project.optional-dependencies]".to_string()),
-                }
-            }
-        }
-    } else if let Some(tool) = &pyproject.tool {
-        if let Some(poetry) = &tool.poetry {
-            // Handle Poetry format
-            if let Some(deps) = &poetry.dependencies {
-                main_deps.extend(deps.iter().filter_map(|(dep, value)| {
-                    let formatted = format_dependency(dep, value);
-                    if should_include_dependency(dep, &formatted) {
-                        Some(formatted)
-                    } else {
-                        None
-                    }
-                }));
-            }
-            if let Some(groups) = &poetry.group {
-                for (_, group) in groups {
-                    dev_deps.extend(group.dependencies.iter().filter_map(|(dep, value)| {
-                        let formatted = format_dependency(dep, value);
-                        if should_include_dependency(dep, &formatted) {
-                            Some(formatted)
-                        } else {
-                            None
-                        }
-                    }));
-                }
-            }
-        } else {
-            return Err("No [tool.poetry] section found in pyproject.toml".to_string());
-        }
-    } else {
-        return Err("Neither [project] (PEP 621) nor [tool.poetry] section found in pyproject.toml".to_string());
-    }
+fn add_all_dependencies(main_deps: &[String], dev_deps: &[String]) -> Result<(), String> {
+    debug!("Main requirements files: {:?}", main_deps);
+    debug!("Dev requirements files: {:?}", dev_deps);
 
-    debug!("Main dependencies: {:?}", main_deps);
-    debug!("Dev dependencies: {:?}", dev_deps);
-
-    main_deps.sort();
-    main_deps.dedup();
-    dev_deps.sort();
-    dev_deps.dedup();
-
-    add_dependencies(&main_deps, false)?;
-    add_dependencies(&dev_deps, true)?;
+    add_dependencies(main_deps, false)?;
+    add_dependencies(dev_deps, true)?;
 
     Ok(())
-}
-
-fn check_for_poetry_section(pyproject: &PyProject) -> bool {
-    if let Some(tool) = &pyproject.tool {
-        if tool.poetry.is_some() {
-            info!("[tool.poetry] section found in pyproject.toml");
-            return true;
-        }
-    }
-    info!("[tool.poetry] section not found in pyproject.toml");
-    false
 }
 
 fn append_tool_sections(old_pyproject_path: &Path, new_pyproject_path: &Path) -> Result<(), String> {
@@ -225,11 +269,11 @@ fn append_tool_sections(old_pyproject_path: &Path, new_pyproject_path: &Path) ->
                 tool_sections.push_str(&current_section);
             }
             in_tool_section = true;
-            is_poetry_section = line.starts_with("[tool.poetry") || is_poetry_section;
+            is_poetry_section = line.starts_with("[tool.poetry");
             current_section = String::new();
             if !is_poetry_section {
                 current_section.push_str(&line);
-                current_section.push_str("\n");
+                current_section.push('\n');
             }
         } else if line.starts_with('[') {
             // If we were in a non-poetry tool section, add it
@@ -242,7 +286,7 @@ fn append_tool_sections(old_pyproject_path: &Path, new_pyproject_path: &Path) ->
             current_section.clear();
         } else if in_tool_section && !is_poetry_section {
             current_section.push_str(&line);
-            current_section.push_str("\n");
+            current_section.push('\n');
         }
     }
 
@@ -257,9 +301,9 @@ fn append_tool_sections(old_pyproject_path: &Path, new_pyproject_path: &Path) ->
         writeln!(new_file).map_err(|e| format!("Failed to write newline: {}", e))?;
         write!(new_file, "{}", tool_sections.trim_start())
             .map_err(|e| format!("Failed to write tool sections: {}", e))?;
-        println!("Appended [tool] sections to new pyproject.toml");
+        info!("Appended [tool] sections to new pyproject.toml");
     } else {
-        println!("No new [tool] sections found to append");
+        info!("No new [tool] sections found to append");
     }
 
     Ok(())
