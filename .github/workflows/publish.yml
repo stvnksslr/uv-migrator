@@ -2,14 +2,14 @@ name: publish
 
 on:
   release:
-    types: [published]
+    types: [ published ]
 
 permissions:
   pull-requests: write
   contents: write
 
 env:
-  RUST_VERSION: 1.72.1
+  RUST_VERSION: "stable"
   BUILD_ARGS: "--release --all-features"
   BIN_NAME: "uv-migrator"
   DOCKER_LOGIN: ${{ secrets.DOCKER_LOGIN }}
@@ -44,16 +44,14 @@ jobs:
 
       - name: Install rust toolchain
         if: ${{ !contains(matrix.platform.target, 'apple') }}
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           toolchain: "${{ env.RUST_VERSION }}"
-          override: true
           target: ${{ matrix.platform.target }}
           components: rustfmt, clippy
 
       - name: Build ${{ matrix.platform.name }} binary
-        if: ${{ !contains(matrix.platform.target, 'apple') }}
+        if: ${{ !contains(matrix.platformarget, 'apple') }}
         uses: actions-rs/cargo@v1
         with:
           command: build
@@ -81,7 +79,7 @@ jobs:
 
   release:
     name: Release
-    needs: [build]
+    needs: [ build ]
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
