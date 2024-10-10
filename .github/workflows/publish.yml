@@ -8,9 +8,6 @@ permissions:
   pull-requests: write
   contents: write
 
-env:
-  BIN_NAME: "uv-migrator"
-
 jobs:
   build:
     name: Build - ${{ matrix.target }}
