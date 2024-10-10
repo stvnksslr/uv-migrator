@@ -18,25 +18,29 @@ env:
 jobs:
   build:
     name: Build - ${{ matrix.platform.name }}
-    runs-on: ${{ matrix.platform.os || 'ubuntu-22.04' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       matrix:
-        platform:
-          - name: Linux x86_64
-            target: x86_64-unknown-linux-gnu
-
-          - name: Linux aarch64
-            target: aarch64-unknown-linux-gnu
-
-          - name: MacOS x86_64
-            target: x86_64-apple-darwin
-
-          - name: MacOS aarch64
-            target: aarch64-apple-darwin
-
-          - name: Windows x86_64
-            os: windows-latest
-            target: x86_64-pc-windows-msvc
+        include:
+          # Arm
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-22.04
+          - target: aarch64-apple-darwin
+            os: macos-12
+          - target: aarch64-pc-windows-msvc
+            os: windows-2022
+         # x86
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-22.04
+          - target: x86_64-apple-darwin
+            os: macos-12
+          - target: x86_64-pc-windows-msvc
+            os: windows-2022
 
     steps:
       - name: Checkout Git repo
@@ -45,36 +49,24 @@ jobs:
       - name: Install rust toolchain
         if: ${{ !contains(matrix.platform.target, 'apple') }}
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "${{ env.RUST_VERSION }}"
-          target: ${{ matrix.platform.target }}
-          components: rustfmt, clippy
 
-      - name: Build ${{ matrix.platform.name }} binary
-        if: ${{ !contains(matrix.platformarget, 'apple') }}
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          use-cross: ${{ !contains(matrix.platform.target, 'x86_64') }}
-          args: ${{ env.BUILD_ARGS }} --target ${{ matrix.platform.target }}
 
-      - name: Login to DockerHub
-        if: contains(matrix.platform.target, 'apple')
-        uses: docker/login-action@v3
+      - uses: taiki-e/setup-cross-toolchain-action@v1
         with:
-          username: ${{ env.DOCKER_LOGIN }}
-          password: ${{ env.DOCKER_TOKEN }}
-      - name: Build ${{ matrix.platform.name }} binary
-        if: contains(matrix.platform.target, 'apple')
-        run: |
-          docker run --rm --volume "${PWD}":/root/src --workdir /root/src joseluisq/rust-linux-darwin-builder:$RUST_VERSION \
-          sh -c "CC=o64-clang CXX=o64-clang++ cargo build $BUILD_ARGS --target ${{ matrix.platform.target }}"
+          target: ${{ matrix.target }}
+        if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
+
+      - uses: taiki-e/install-action@cross
+        if: contains(matrix.target, '-musl')
+
+      - run: echo "RUSTFLAGS=${RUSTFLAGS} -C target-feature=+crt-static" >> "${GITHUB_ENV}"
+        if: endsWith(matrix.target, 'windows-msvc')
 
       - name: Store artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.platform.target }}-${{ env.BIN_NAME }}
-          path: target/${{ matrix.platform.target }}/release/${{ env.BIN_NAME }}${{ contains(matrix.platform.target, 'windows') && '.exe' || '' }}
+          name: ${{ matrix.target }}-${{ env.BIN_NAME }}
+          path: target/${{ matrix.target }}/release/${{ env.BIN_NAME }}${{ contains(matrix.target, 'windows') && '.exe' || '' }}
           retention-days: 1
 
   release:
