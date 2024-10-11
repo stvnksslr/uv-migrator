@@ -64,6 +64,7 @@ impl PoetryMigrationSource {
             name: name.to_string(),
             version,
             dep_type,
+            environment_markers: None, // Poetry doesn't use environment markers in the same way as requirements.txt
         })
     }
 }
