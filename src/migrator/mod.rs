@@ -70,11 +70,16 @@ impl MigrationTool for UvTool {
             command.current_dir(project_dir);
 
             for dep in deps {
-                let dep_str = if let Some(version) = &dep.version {
+                let mut dep_str = if let Some(version) = &dep.version {
                     format!("{}=={}", dep.name, version)
                 } else {
                     dep.name.clone()
                 };
+
+                if let Some(markers) = &dep.environment_markers {
+                    dep_str.push_str(&format!("; {}", markers));
+                }
+
                 command.arg(dep_str);
             }
 
