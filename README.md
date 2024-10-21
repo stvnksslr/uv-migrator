@@ -12,6 +12,7 @@ UV Migrator is a Rust-based tool designed to facilitate the migration of Python 
 - Provides detailed logging for transparency and debugging
 - Supports importing extra index URLs from global pip configuration
 - Allows specifying additional index URLs during migration
+- By default doesnt pin the python version via a .python-versions file incase the user uses asdf/mise and .tool-versions files
 
 ## Prerequisites
 
