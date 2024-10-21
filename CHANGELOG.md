@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2024.3.2](https://github.com/stvnksslr/uv-migrator/compare/v2024.3.1...v2024.3.2) - 2024-10-21
+
+### Added
+- *(private package indexes)* because of the way the migrator tool is setup it requires adding the packages and creating a lockfile which can cause issues if a given package cannot be seen due to being in a private index this can be fixed by fetching from a global pip.conf or providing a index url (by @stvnksslr)
+
+### Other
+- *(changing defaults)* By default doesnt pin the python version via a .python-versions file incase the user uses asdf/mise and .tool-versions files (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2024.3.1](https://github.com/stvnksslr/uv-migrator/compare/v2024.3.0...v2024.3.1) - 2024-10-11
 
 ### Fixed
