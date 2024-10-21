@@ -10,8 +10,11 @@ readme = "README.md"
 keywords = ["python", "uv"]
 
 [dependencies]
+clap = "4.5.20"
+dirs = "5.0.1"
 env_logger = "0.11.5"
 log = "0.4.22"
 serde = { version = "1.0.210" , features = ["derive"] }
+serde_json = "1.0.132"
 toml = "0.8.19"
 which = "6.0.3"
