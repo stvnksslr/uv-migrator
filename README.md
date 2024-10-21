@@ -67,9 +67,3 @@ or
   ```
   uv-migrator path/to/your/project --import-index https://custom.pypi.org/simple/
   ```
-
-You can combine these options as needed:
-
-```
-uv-migrator path/to/your/project --import-global-pip-conf --import-index https://custom.pypi.org/simple/ --import-index https://another.pypi.org/simple/
-```
