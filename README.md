@@ -1,6 +1,6 @@
 # UV Migrator
 
-UV Migrator is a Rust-based tool designed to facilitate the migration of Python projects from various dependency management systems (like Poetry or PEP 621) to the UV package manager. This tool automates the process of creating a new UV-based project structure while preserving existing dependencies.
+UV Migrator is a Rust-based tool designed to facilitate the migration of Python projects from various dependency management systems (like pip or poetry) to the UV package manager. This tool automates the process of creating a new UV-based project structure while preserving existing dependencies.
 
 ## Features
 
