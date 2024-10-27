@@ -51,11 +51,28 @@ impl PoetryMigrationSource {
         }
 
         let version = match value {
-            toml::Value::String(v) => Some(v.trim_start_matches('^').to_string()),
+            toml::Value::String(v) => {
+                let v = v.trim_start_matches('^');
+                // Handle "*" version specifier
+                if v == "*" {
+                    None
+                } else {
+                    Some(v.to_string())
+                }
+            },
             toml::Value::Table(t) => {
                 t.get("version")
                     .and_then(|v| v.as_str())
-                    .map(|v| v.trim_start_matches('^').to_string())
+                    .map(|v| {
+                        let v = v.trim_start_matches('^');
+                        // Handle "*" version specifier in table format
+                        if v == "*" {
+                            String::new()
+                        } else {
+                            v.to_string()
+                        }
+                    })
+                    .filter(|v| !v.is_empty())
             }
             _ => None,
         };
@@ -64,7 +81,7 @@ impl PoetryMigrationSource {
             name: name.to_string(),
             version,
             dep_type,
-            environment_markers: None, // Poetry doesn't use environment markers in the same way as requirements.txt
+            environment_markers: None,
         })
     }
 }
