@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2024.3.3](https://github.com/stvnksslr/uv-migrator/compare/v2024.3.2...v2024.3.3) - 2024-10-27
+
+### Other
+- *(* character)* wildcard or all on dependencies now handled properly when importing (by @stvnksslr)
+- *(readme)* fixing some readme language (by @stvnksslr)
+- chore(deps bump + readme): (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2024.3.2](https://github.com/stvnksslr/uv-migrator/compare/v2024.3.1...v2024.3.2) - 2024-10-21
 
 ### Added
