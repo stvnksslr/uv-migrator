@@ -1,12 +1,12 @@
+use clap::{Arg, Command};
 use log::{error, info};
 use std::env;
 use std::path::Path;
 use std::process::exit;
-use clap::{Arg, Command};
 
+mod migrator;
 mod types;
 mod utils;
-mod migrator;
 
 fn main() {
     if env::var_os("RUST_LOG").is_none() {
@@ -20,20 +20,26 @@ fn main() {
     }
 
     let matches = Command::new("uv-migrator")
-        .version("1.0")
+        .version(env!("CARGO_PKG_VERSION"))
         .about("Migrates Python projects to use uv")
-        .arg(Arg::new("PATH")
-            .help("The path to the project directory")
-            .required(true)
-            .index(1))
-        .arg(Arg::new("import-global-pip-conf")
-            .long("import-global-pip-conf")
-            .help("Import extra index URLs from ~/.pip/pip.conf")
-            .action(clap::ArgAction::SetTrue))
-        .arg(Arg::new("import-index")
-            .long("import-index")
-            .help("Additional index URL to import")
-            .action(clap::ArgAction::Append))
+        .arg(
+            Arg::new("PATH")
+                .help("The path to the project directory")
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::new("import-global-pip-conf")
+                .long("import-global-pip-conf")
+                .help("Import extra index URLs from ~/.pip/pip.conf")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("import-index")
+                .long("import-index")
+                .help("Additional index URL to import")
+                .action(clap::ArgAction::Append),
+        )
         .get_matches();
 
     let input_path = Path::new(matches.get_one::<String>("PATH").unwrap());
@@ -44,7 +50,8 @@ fn main() {
     };
 
     let import_global_pip_conf = matches.get_flag("import-global-pip-conf");
-    let additional_index_urls: Vec<String> = matches.get_many::<String>("import-index")
+    let additional_index_urls: Vec<String> = matches
+        .get_many::<String>("import-index")
         .map(|values| values.cloned().collect())
         .unwrap_or_default();
 

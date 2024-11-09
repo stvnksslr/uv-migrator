@@ -83,7 +83,20 @@ impl MigrationTool for UvTool {
 
             for dep in deps {
                 let mut dep_str = if let Some(version) = &dep.version {
-                    format!("{}=={}", dep.name, version)
+                    let version = version.trim();
+                    if version.starts_with('^') {
+                        // Convert caret version to >= format
+                        format!("{}>={}", dep.name, &version[1..])
+                    } else if version.starts_with('~') {
+                        // Convert tilde version to ~= format
+                        format!("{}~={}", dep.name, &version[1..])
+                    } else if version.starts_with(|c: char| c == '>' || c == '<' || c == '=') {
+                        // Other version constraints remain as is
+                        format!("{}{}", dep.name, version)
+                    } else {
+                        // For exact versions
+                        format!("{}=={}", dep.name, version)
+                    }
                 } else {
                     dep.name.clone()
                 };
@@ -95,6 +108,7 @@ impl MigrationTool for UvTool {
                 command.arg(dep_str);
             }
 
+            info!("Running uv add command with dependencies: {:?}", command);
             let output = command
                 .output()
                 .map_err(|e| format!("Failed to execute uv command: {}", e))?;
