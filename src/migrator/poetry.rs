@@ -52,8 +52,7 @@ impl PoetryMigrationSource {
 
         let version = match value {
             toml::Value::String(v) => {
-                let v = v.trim_start_matches('^');
-                // Handle "*" version specifier
+                let v = v.trim();
                 if v == "*" {
                     None
                 } else {
@@ -63,16 +62,8 @@ impl PoetryMigrationSource {
             toml::Value::Table(t) => {
                 t.get("version")
                     .and_then(|v| v.as_str())
-                    .map(|v| {
-                        let v = v.trim_start_matches('^');
-                        // Handle "*" version specifier in table format
-                        if v == "*" {
-                            String::new()
-                        } else {
-                            v.to_string()
-                        }
-                    })
-                    .filter(|v| !v.is_empty())
+                    .map(|v| v.trim().to_string())
+                    .filter(|v| v != "*")
             }
             _ => None,
         };
