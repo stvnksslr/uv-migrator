@@ -4,7 +4,7 @@ use std::env;
 use std::path::Path;
 use std::process::exit;
 
-mod migrator;
+mod migrators;
 mod types;
 mod utils;
 
@@ -14,33 +14,96 @@ fn main() {
     }
     env_logger::init();
 
-    if let Err(e) = which::which("uv") {
-        error!("The 'uv' command is not available. Please install uv and ensure it's in your PATH. Error: {}", e);
-        exit(1);
-    }
-
     let matches = Command::new("uv-migrator")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Migrates Python projects to use uv")
+        .about("A tool for migrating Python projects to use the uv package manager")
+        .long_about(
+            "UV Migrator helps you convert Python projects from various dependency management systems \
+            (like Poetry or pip) to use the UV package manager. It preserves your dependencies, \
+            development configurations, and project structure while setting up a new UV-based environment."
+        )
         .arg(
             Arg::new("PATH")
-                .help("The path to the project directory")
-                .required(true)
-                .index(1),
+                .help("The path to the project directory to migrate")
+                .long_help(
+                    "Specifies the directory containing the Python project to migrate. \
+                    This should be the root directory of your project where pyproject.toml \
+                    or requirements.txt is located."
+                )
+                .required_unless_present("self-update")
+                .value_parser(clap::value_parser!(String))
+        )
+        .arg(
+            Arg::new("self-update")
+                .long("self-update")
+                .help("Update uv-migrator to the latest version")
+                .long_help(
+                    "Checks for and downloads the latest version of uv-migrator from GitHub releases. \
+                    The tool will automatically update itself if a newer version is available."
+                )
+                .action(clap::ArgAction::SetTrue)
         )
         .arg(
             Arg::new("import-global-pip-conf")
                 .long("import-global-pip-conf")
                 .help("Import extra index URLs from ~/.pip/pip.conf")
-                .action(clap::ArgAction::SetTrue),
+                .long_help(
+                    "Reads and imports any extra package index URLs defined in your global pip \
+                    configuration file (~/.pip/pip.conf). This is useful when your project requires \
+                    packages from private or alternative Python package indexes."
+                )
+                .action(clap::ArgAction::SetTrue)
         )
         .arg(
             Arg::new("import-index")
                 .long("import-index")
                 .help("Additional index URL to import")
-                .action(clap::ArgAction::Append),
+                .long_help(
+                    "Specifies additional Python package index URLs to use. You can provide this \
+                    option multiple times to add several index URLs. These URLs will be added to \
+                    your project's pyproject.toml in the [tool.uv] section."
+                )
+                .action(clap::ArgAction::Append)
+                .value_parser(clap::value_parser!(String))
+        )
+        .after_help(
+            "EXAMPLES:\n\
+            # Migrate a project in the current directory\n\
+            uv-migrator .\n\
+            \n\
+            # Migrate a project with a private package index\n\
+            uv-migrator . --import-index https://private.pypi.org/simple/\n\
+            \n\
+            # Update uv-migrator to the latest version\n\
+            uv-migrator --self-update\n\
+            \n\
+            # Migrate using global pip configuration\n\
+            uv-migrator . --import-global-pip-conf\n\
+            \n\
+            For more information and documentation, visit:\n\
+            https://github.com/stvnksslr/uv-migrator"
         )
         .get_matches();
+
+    if matches.get_flag("self-update") {
+        match utils::update() {
+            Ok(_) => exit(0),
+            Err(e) => {
+                error!("Failed to update: {}", e);
+                exit(1);
+            }
+        }
+    }
+
+    if !matches.contains_id("PATH") {
+        error!("No path provided. Use --help for usage information.");
+        exit(1);
+    }
+
+    if let Err(e) = which::which("uv") {
+        error!("The 'uv' command is not available. Please install uv and ensure it's in your PATH. Error: {}", e);
+        exit(1);
+    }
 
     let input_path = Path::new(matches.get_one::<String>("PATH").unwrap());
     let project_dir = if input_path.is_dir() {
@@ -55,7 +118,7 @@ fn main() {
         .map(|values| values.cloned().collect())
         .unwrap_or_default();
 
-    match migrator::run_migration(&project_dir, import_global_pip_conf, &additional_index_urls) {
+    match migrators::run_migration(&project_dir, import_global_pip_conf, &additional_index_urls) {
         Ok(_) => info!("Migration completed successfully"),
         Err(e) => {
             error!("Error during migration: {}", e);
