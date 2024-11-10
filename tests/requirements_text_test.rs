@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
-use uv_migrator::migrator::requirements::RequirementsMigrationSource;
-use uv_migrator::migrator::{DependencyType, MigrationSource};
+use uv_migrator::migrators::requirements::RequirementsMigrationSource;
+use uv_migrator::migrators::{DependencyType, MigrationSource};
 
 /// Helper function to create a temporary test project with requirements files.
 ///
