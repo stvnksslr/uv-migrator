@@ -59,11 +59,21 @@ or
 ### Additional Options
 
 - `--import-global-pip-conf`: Import extra index URLs from `~/.pip/pip.conf`
-  ```
+  ```bash
   uv-migrator path/to/your/project --import-global-pip-conf
   ```
 
 - `--import-index`: Specify additional index URLs to import (can be used multiple times)
-  ```
+  ```bash
   uv-migrator path/to/your/project --import-index https://custom.pypi.org/simple/
+  ```
+
+- `--help`: Display comprehensive help information
+  ```bash
+  uv-migrator --help
+  ```
+
+- `--self-update`: Update UV Migrator to the latest version
+  ```bash
+  uv-migrator --self-update
   ```
