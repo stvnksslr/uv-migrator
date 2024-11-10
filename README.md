@@ -31,13 +31,13 @@ The compiled binary will be available in the `target/release` directory.
 
 ## Supported Package Managers
 
-* Poetry
+* poetry
 * pip (requirements.txt)
 
 ## In Progress
 
-* PDM
-* Hatch
+* pdm
+* hatch
 * pipenv
 * Open Issues for more!
 
