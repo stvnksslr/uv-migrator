@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2024.4.0](https://github.com/stvnksslr/uv-migrator/compare/v2024.3.4...v2024.4.0) - 2024-11-10
+
+### Added
+- *(tests)* requirements.txt and poetry parser and migration tests, these should have been in from the getgo but will also work as a better frame of reference for other tools (by @stvnksslr)
+
+### Other
+- *(readme)* minor readme tune up (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2024.3.4](https://github.com/stvnksslr/uv-migrator/compare/v2024.3.3...v2024.3.4) - 2024-11-09
 
 ### Other
