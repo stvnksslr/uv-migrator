@@ -1,8 +1,8 @@
 mod dependency;
 mod detect;
-mod poetry;
+pub mod poetry;
 mod pyproject;
-mod requirements;
+pub mod requirements;
 
 use crate::utils::{create_virtual_environment, parse_pip_conf, update_pyproject_toml};
 pub use dependency::{Dependency, DependencyType};
