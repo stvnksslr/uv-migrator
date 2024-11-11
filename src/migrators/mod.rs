@@ -90,7 +90,7 @@ impl MigrationTool for UvTool {
                     } else if version.starts_with('~') {
                         // Convert tilde version to ~= format
                         format!("{}~={}", dep.name, &version[1..])
-                    } else if version.starts_with(|c: char| c == '>' || c == '<' || c == '=') {
+                    } else if version.starts_with(['>', '<', '=']) {
                         // Other version constraints remain as is
                         format!("{}{}", dep.name, version)
                     } else {

@@ -10,11 +10,9 @@ pub enum ProjectType {
 pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType, String> {
     let pyproject_path = project_dir.join("pyproject.toml");
 
-    if pyproject_path.exists() {
-        if has_poetry_section(&pyproject_path)? {
-            info!("Detected Poetry project");
-            return Ok(ProjectType::Poetry);
-        }
+    if pyproject_path.exists() && has_poetry_section(&pyproject_path)? {
+        info!("Detected Poetry project");
+        return Ok(ProjectType::Poetry);
     }
 
     let requirements_files = find_requirements_files(project_dir);
