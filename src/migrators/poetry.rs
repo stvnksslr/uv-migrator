@@ -29,7 +29,7 @@ impl MigrationSource for PoetryMigrationSource {
 
                 // Handle dev dependencies
                 if let Some(groups) = &poetry.group {
-                    for (_, group) in groups {
+                    for group in groups.values() {
                         for (name, value) in &group.dependencies {
                             if let Some(dep) = self.format_dependency(name, value, DependencyType::Dev) {
                                 dependencies.push(dep);
