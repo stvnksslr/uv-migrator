@@ -5,13 +5,13 @@ use uv_migrator::migrators::poetry::PoetryMigrationSource;
 use uv_migrator::migrators::{DependencyType, MigrationSource};
 
 /// Helper function to create a temporary test project with a pyproject.toml file.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `content` - The content to write to the pyproject.toml file
-/// 
+///
 /// # Returns
-/// 
+///
 /// A tuple containing the temporary directory and its path
 fn create_test_project(content: &str) -> (TempDir, PathBuf) {
     let temp_dir = TempDir::new().unwrap();
@@ -22,7 +22,7 @@ fn create_test_project(content: &str) -> (TempDir, PathBuf) {
 }
 
 /// Test that main dependencies are correctly extracted from a Poetry project.
-/// 
+///
 /// This test verifies that:
 /// 1. Python version requirements are excluded
 /// 2. Regular dependencies are parsed with correct versions
@@ -59,7 +59,7 @@ uvicorn = { extras = ["standard"], version = "^0.30.1" }
 }
 
 /// Test that development dependencies are correctly extracted from a Poetry project.
-/// 
+///
 /// This test verifies that:
 /// 1. Dependencies in the dev group are correctly identified
 /// 2. All dev dependencies have the correct DependencyType::Dev
@@ -92,7 +92,7 @@ pytest-sugar = "^1.0.0"
 }
 
 /// Test handling of multiple dependency groups in a Poetry project.
-/// 
+///
 /// This test verifies that:
 /// 1. Main dependencies are correctly identified
 /// 2. Multiple dev groups (dev, code-quality) are handled properly
@@ -131,7 +131,7 @@ mypy = "^1.11.1"
 }
 
 /// Test handling of dependencies with extras (optional features) in a Poetry project.
-/// 
+///
 /// This test verifies that:
 /// 1. Dependencies with extras are parsed correctly
 /// 2. Version specifications within table definitions are extracted properly
@@ -160,7 +160,7 @@ aiohttp = { extras = ["speedups"], version = "^3.10.5" }
 }
 
 /// Test handling of dependencies without version specifications.
-/// 
+///
 /// This test verifies that:
 /// 1. Dependencies with "*" version are parsed as having no version constraint
 /// 2. Python version requirements are excluded
@@ -188,7 +188,7 @@ requests = "*"
 }
 
 /// Test error handling for invalid TOML syntax in pyproject.toml.
-/// 
+///
 /// This test verifies that:
 /// 1. Invalid TOML content results in an error
 /// 2. The error message contains appropriate information about parsing failure
@@ -208,7 +208,7 @@ name = "test-project"
 }
 
 /// Test error handling when pyproject.toml is missing.
-/// 
+///
 /// This test verifies that:
 /// 1. Attempting to extract dependencies from a non-existent file results in an error
 /// 2. The error message contains appropriate information about the missing file
@@ -225,7 +225,7 @@ fn test_error_missing_file() {
 }
 
 /// Test handling of test group dependencies in a Poetry project.
-/// 
+///
 /// This test verifies that:
 /// 1. Dependencies in the test group are correctly identified
 /// 2. Version specifications are properly parsed
@@ -244,15 +244,174 @@ python = "^3.11"
 blue = ">=0.9.1"
 "#;
     let (_temp_dir, project_dir) = create_test_project(content);
-    
+
     let source = PoetryMigrationSource;
     let dependencies = source.extract_dependencies(&project_dir).unwrap();
-    
+
     assert_eq!(dependencies.len(), 1);
-    
+
     let blue_dep = dependencies.iter()
         .find(|d| d.name == "blue")
         .unwrap();
     assert_eq!(blue_dep.version, Some(">=0.9.1".to_string()));
     assert_eq!(blue_dep.dep_type, DependencyType::Dev);  // All group dependencies should be marked as Dev
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use tempfile::TempDir;
+    use uv_migrator::utils::update_pyproject_toml;
+
+    /// Helper function to create a temporary test directory.
+    ///
+    /// # Returns
+    ///
+    /// A temporary directory that will be automatically cleaned up when dropped
+    fn setup_test_dir() -> TempDir {
+        tempfile::tempdir().expect("Failed to create temp directory")
+    }
+
+    /// Test migration of project metadata from Poetry to uv format.
+    ///
+    /// This test verifies that:
+    /// 1. The version is correctly migrated from old to new pyproject.toml
+    /// 2. The description is properly transferred from Poetry format
+    /// 3. The metadata is correctly formatted in the new pyproject.toml
+    ///
+    /// # Returns
+    ///
+    /// A Result indicating whether the test passed or failed with an error message
+    #[test]
+    fn test_description_migration() -> Result<(), String> {
+        let test_dir = setup_test_dir();
+
+        // Create old.pyproject.toml with description
+        let old_content = r#"[tool.poetry]
+name = "test-project"
+version = "1.3.0"
+description = "a module for parsing battlescribe rosters and allowing them to be printed or displayed cleanly"
+authors = ["Test Author <test@example.com>"]
+license = "MIT"
+"#;
+        fs::write(
+            test_dir.path().join("old.pyproject.toml"),
+            old_content,
+        ).map_err(|e| format!("Failed to write old.pyproject.toml: {}", e))?;
+
+        // Create new pyproject.toml with default content
+        let new_content = r#"[project]
+name = "test-project"
+version = "0.1.0"
+description = "Add your description here"
+"#;
+        fs::write(
+            test_dir.path().join("pyproject.toml"),
+            new_content,
+        ).map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
+
+        // Run the migration
+        update_pyproject_toml(test_dir.path(), &[])?;
+
+        // Read the result
+        let result = fs::read_to_string(test_dir.path().join("pyproject.toml"))
+            .map_err(|e| format!("Failed to read result: {}", e))?;
+
+        // Verify the changes
+        assert!(result.contains(r#"version = "1.3.0""#), "Version was not updated correctly");
+        assert!(result.contains(r#"description = "a module for parsing battlescribe rosters and allowing them to be printed or displayed cleanly""#),
+                "Description was not updated correctly");
+
+        Ok(())
+    }
+
+    /// Test handling of missing description in Poetry project file.
+    ///
+    /// This test verifies that:
+    /// 1. The version is correctly migrated from old to new pyproject.toml
+    /// 2. The default description remains unchanged when no description exists in Poetry file
+    /// 3. Other metadata fields are properly updated
+    ///
+    /// # Returns
+    ///
+    /// A Result indicating whether the test passed or failed with an error message
+    #[test]
+    fn test_missing_description() -> Result<(), String> {
+        let test_dir = setup_test_dir();
+
+        // Create old.pyproject.toml without description
+        let old_content = r#"[tool.poetry]
+name = "test-project"
+version = "1.3.0"
+authors = ["Test Author <test@example.com>"]
+license = "MIT"
+"#;
+        fs::write(
+            test_dir.path().join("old.pyproject.toml"),
+            old_content,
+        ).map_err(|e| format!("Failed to write old.pyproject.toml: {}", e))?;
+
+        // Create new pyproject.toml with default content
+        let new_content = r#"[project]
+name = "test-project"
+version = "0.1.0"
+description = "Add your description here"
+"#;
+        fs::write(
+            test_dir.path().join("pyproject.toml"),
+            new_content,
+        ).map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
+
+        // Run the migration
+        update_pyproject_toml(test_dir.path(), &[])?;
+
+        // Read the result
+        let result = fs::read_to_string(test_dir.path().join("pyproject.toml"))
+            .map_err(|e| format!("Failed to read result: {}", e))?;
+
+        // Verify the changes
+        assert!(result.contains(r#"version = "1.3.0""#), "Version was not updated correctly");
+        assert!(result.contains(r#"description = "Add your description here""#),
+                "Description should remain unchanged when not present in Poetry file");
+
+        Ok(())
+    }
+
+    /// Test behavior when old.pyproject.toml is missing.
+    ///
+    /// This test verifies that:
+    /// 1. The migration process handles missing old.pyproject.toml gracefully
+    /// 2. The existing pyproject.toml remains unchanged
+    /// 3. No errors are thrown when the old configuration file is absent
+    ///
+    /// # Returns
+    ///
+    /// A Result indicating whether the test passed or failed with an error message
+    #[test]
+    fn test_no_old_pyproject() -> Result<(), String> {
+        let test_dir = setup_test_dir();
+
+        // Create only new pyproject.toml with default content
+        let new_content = r#"[project]
+name = "test-project"
+version = "0.1.0"
+description = "Add your description here"
+"#;
+        fs::write(
+            test_dir.path().join("pyproject.toml"),
+            new_content,
+        ).map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
+
+        // Run the migration
+        update_pyproject_toml(test_dir.path(), &[])?;
+
+        // Read the result
+        let result = fs::read_to_string(test_dir.path().join("pyproject.toml"))
+            .map_err(|e| format!("Failed to read result: {}", e))?;
+
+        // Verify nothing changed
+        assert_eq!(result, new_content, "File should remain unchanged when no old.pyproject.toml exists");
+
+        Ok(())
+    }
 }
