@@ -20,6 +20,7 @@ serde_json = "1.0.132"
 toml = "0.8.19"
 which = "7.0.0"
 openssl = { version = "0.10", features = ["vendored"] }
+regex = "1.11.1"
 
 [dev-dependencies]
 tempfile = "3.14.0"
