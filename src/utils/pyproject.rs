@@ -1,7 +1,7 @@
 use log::{info, warn};
-use std::path::PathBuf;
+use std::path::{Path};
 
-pub fn update_pyproject_toml(project_dir: &PathBuf, extra_urls: &[String]) -> Result<(), String> {
+pub fn update_pyproject_toml(project_dir: &Path, extra_urls: &[String]) -> Result<(), String> {
     let pyproject_path = project_dir.join("pyproject.toml");
     let mut content = std::fs::read_to_string(&pyproject_path)
         .map_err(|e| format!("Failed to read pyproject.toml: {}", e))?;

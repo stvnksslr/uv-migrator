@@ -84,12 +84,12 @@ impl MigrationTool for UvTool {
             for dep in deps {
                 let mut dep_str = if let Some(version) = &dep.version {
                     let version = version.trim();
-                    if version.starts_with('^') {
+                    if let Some(stripped) = version.strip_prefix('^') {
                         // Convert caret version to >= format
-                        format!("{}>={}", dep.name, &version[1..])
-                    } else if version.starts_with('~') {
+                        format!("{}>={}", dep.name, stripped)
+                    } else if let Some(stripped) = version.strip_prefix('~') {
                         // Convert tilde version to ~= format
-                        format!("{}~={}", dep.name, &version[1..])
+                        format!("{}~={}", dep.name, stripped)
                     } else if version.starts_with(['>', '<', '=']) {
                         // Other version constraints remain as is
                         format!("{}{}", dep.name, version)
@@ -155,7 +155,7 @@ pub fn run_migration(
     }
     extra_urls.extend(additional_index_urls.iter().cloned());
     if !extra_urls.is_empty() {
-        update_pyproject_toml(&project_dir.to_path_buf(), &extra_urls)?;
+        update_pyproject_toml(project_dir, &extra_urls)?;
     }
 
     migration_tool.add_dependencies(project_dir, &dependencies)?;
