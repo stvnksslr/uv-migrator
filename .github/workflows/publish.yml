@@ -39,6 +39,12 @@ jobs:
       - name: Checkout Git repo
         uses: actions/checkout@v4
 
+      - name: Set Perl environment variables
+        if: runner.os == 'Windows'
+        run: |
+          echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Install rust toolchain
         if: ${{ !contains(matrix.platform.target, 'apple') }}
         uses: dtolnay/rust-toolchain@stable
@@ -61,3 +67,4 @@ jobs:
           tar: all
           zip: windows
           token: ${{ secrets.GITHUB_TOKEN }}
+          dry-run: false
