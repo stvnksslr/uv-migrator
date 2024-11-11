@@ -1,8 +1,14 @@
 name: publish
 
+#on:
+#  release:
+#    types: [ published ]
+
 on:
-  release:
-    types: [ published ]
+  push:
+    branches:
+      - fix/openssl-issues
+
 
 permissions:
   pull-requests: write
@@ -61,3 +67,4 @@ jobs:
           tar: all
           zip: windows
           token: ${{ secrets.GITHUB_TOKEN }}
+          dry-run: true
