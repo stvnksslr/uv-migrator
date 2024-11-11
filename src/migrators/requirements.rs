@@ -106,12 +106,16 @@ impl RequirementsMigrationSource {
 
     fn process_version_spec(&self, version_spec: &str) -> String {
         let version_spec = version_spec.trim();
-        if version_spec.starts_with("==") {
-            version_spec[2..].to_string()
-        } else if version_spec.starts_with(">=") || version_spec.starts_with("<=") {
-            version_spec[2..].to_string()
-        } else if version_spec.starts_with('>') || version_spec.starts_with('<') {
-            version_spec[1..].to_string()
+        if let Some(stripped) = version_spec.strip_prefix("==") {
+            stripped.to_string()
+        } else if let Some(stripped) = version_spec.strip_prefix(">=") {
+            stripped.to_string()
+        } else if let Some(stripped) = version_spec.strip_prefix("<=") {
+            stripped.to_string()
+        } else if let Some(stripped) = version_spec.strip_prefix('>') {
+            stripped.to_string()
+        } else if let Some(stripped) = version_spec.strip_prefix('<') {
+            stripped.to_string()
         } else {
             version_spec.to_string()
         }
