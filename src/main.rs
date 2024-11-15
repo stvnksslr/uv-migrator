@@ -3,6 +3,7 @@ use log::{error, info};
 use std::env;
 use std::path::Path;
 use std::process::exit;
+use crate::utils::check_uv_requirements;
 
 mod migrators;
 mod types;
@@ -100,8 +101,9 @@ fn main() {
         exit(1);
     }
 
-    if let Err(e) = which::which("uv") {
-        error!("The 'uv' command is not available. Please install uv and ensure it's in your PATH. Error: {}", e);
+    // Check UV requirements before proceeding
+    if let Err(e) = check_uv_requirements() {
+        error!("{}", e);
         exit(1);
     }
 
