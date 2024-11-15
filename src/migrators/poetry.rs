@@ -1,9 +1,9 @@
 // In migrators/poetry.rs
 
-use super::{MigrationSource, Dependency, DependencyType};
+use super::{Dependency, DependencyType, MigrationSource};
 use crate::types::PyProject;
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 pub struct PoetryMigrationSource;
 
@@ -13,8 +13,13 @@ impl MigrationSource for PoetryMigrationSource {
         let contents = fs::read_to_string(&pyproject_path)
             .map_err(|e| format!("Error reading file '{}': {}", pyproject_path.display(), e))?;
 
-        let pyproject: PyProject = toml::from_str(&contents)
-            .map_err(|e| format!("Error parsing TOML in '{}': {}", pyproject_path.display(), e))?;
+        let pyproject: PyProject = toml::from_str(&contents).map_err(|e| {
+            format!(
+                "Error parsing TOML in '{}': {}",
+                pyproject_path.display(),
+                e
+            )
+        })?;
 
         let mut dependencies = Vec::new();
 
@@ -23,7 +28,8 @@ impl MigrationSource for PoetryMigrationSource {
                 // Handle main dependencies
                 if let Some(deps) = &poetry.dependencies {
                     for (name, value) in deps {
-                        if let Some(dep) = self.format_dependency(name, value, DependencyType::Main) {
+                        if let Some(dep) = self.format_dependency(name, value, DependencyType::Main)
+                        {
                             dependencies.push(dep);
                         }
                     }
@@ -33,13 +39,15 @@ impl MigrationSource for PoetryMigrationSource {
                 if let Some(groups) = &poetry.group {
                     for (group_name, group) in groups {
                         // Determine dependency type based on group name
+                        // Only "dev" group should be converted to DependencyType::Dev
                         let dep_type = match group_name.as_str() {
-                            "dev" | "test" => DependencyType::Dev,
-                            _ => DependencyType::Group(group_name.clone())
+                            "dev" => DependencyType::Dev,
+                            _ => DependencyType::Group(group_name.clone()),
                         };
 
                         for (name, value) in &group.dependencies {
-                            if let Some(dep) = self.format_dependency(name, value, dep_type.clone()) {
+                            if let Some(dep) = self.format_dependency(name, value, dep_type.clone())
+                            {
                                 dependencies.push(dep);
                             }
                         }
@@ -53,7 +61,12 @@ impl MigrationSource for PoetryMigrationSource {
 }
 
 impl PoetryMigrationSource {
-    fn format_dependency(&self, name: &str, value: &toml::Value, dep_type: DependencyType) -> Option<Dependency> {
+    fn format_dependency(
+        &self,
+        name: &str,
+        value: &toml::Value,
+        dep_type: DependencyType,
+    ) -> Option<Dependency> {
         if name == "python" {
             return None;
         }
@@ -66,13 +79,12 @@ impl PoetryMigrationSource {
                 } else {
                     Some(v.to_string())
                 }
-            },
-            toml::Value::Table(t) => {
-                t.get("version")
-                    .and_then(|v| v.as_str())
-                    .map(|v| v.trim().to_string())
-                    .filter(|v| v != "*")
             }
+            toml::Value::Table(t) => t
+                .get("version")
+                .and_then(|v| v.as_str())
+                .map(|v| v.trim().to_string())
+                .filter(|v| v != "*"),
             _ => None,
         };
 
