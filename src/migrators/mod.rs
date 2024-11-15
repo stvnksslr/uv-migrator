@@ -95,14 +95,20 @@ impl MigrationTool for UvTool {
             for dep in deps {
                 let mut dep_str = if let Some(version) = &dep.version {
                     let version = version.trim();
-                    if let Some(stripped) = version.strip_prefix('^') {
+                    if version.contains(',') {
+                        // For multiple version constraints, preserve as-is
+                        format!("{}{}", dep.name, version)
+                    } else if version.starts_with("~=") {
+                        // Already in correct format
+                        format!("{}{}", dep.name, version)
+                    } else if let Some(stripped) = version.strip_prefix('~') {
+                        // Convert single tilde to ~= format
+                        format!("{}~={}", dep.name, stripped)
+                    } else if let Some(stripped) = version.strip_prefix('^') {
                         // Convert caret version to >= format
                         format!("{}>={}", dep.name, stripped)
-                    } else if let Some(stripped) = version.strip_prefix('~') {
-                        // Convert tilde version to ~= format
-                        format!("{}~={}", dep.name, stripped)
                     } else if version.starts_with(['>', '<', '=']) {
-                        // Other version constraints remain as is
+                        // Version constraints remain as is
                         format!("{}{}", dep.name, version)
                     } else {
                         // For exact versions
