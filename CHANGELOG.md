@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.0.0](https://github.com/stvnksslr/uv-migrator/compare/v2024.6.0...v2025.0.0) - 2024-11-15
+
+### Added
+- *(dependency groups)* dependency groups are now properly supported by uv, if you are using some form of grouping requirements-test.txt or poetry  [tool.poetry.group.test.dependencies] these will now carry over, if you are not using them everything will fall under --dev as normal (by @stvnksslr)
+
+### Fixed
+- *(poetry)* was not clearly translating poetry dep groups to uv ones in many circumstances (by @stvnksslr)
+
+### Other
+- chore(gitignore tweaks): (by @stvnksslr)
+- chore(gitignore tweaks): (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2024.6.0](https://github.com/stvnksslr/uv-migrator/compare/v2024.5.4...v2024.6.0) - 2024-11-11
 
 ### Added
