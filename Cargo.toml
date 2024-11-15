@@ -1,6 +1,6 @@
 [package]
 name = "uv-migrator"
-version = "2024.7.0"
+version = "2024.7.1"
 edition = "2021"
 authors = ["stvnksslr@gmail.com"]
 description = "Tool for converting various python package soltutions to use the uv solution by astral"
@@ -14,7 +14,7 @@ clap = "4.5.20"
 dirs = "5.0.1"
 env_logger = "0.11.5"
 log = "0.4.22"
-self_update = { version = "0.41.0", features = ["archive-tar", "archive-zip", "compression-flate2", "rustls"] }
+self_update = { version = "0.41.0", features = ["archive-tar", "archive-zip", "compression-flate2", "rustls"], default-features = false }
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 toml = "0.8.19"
