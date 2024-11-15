@@ -106,23 +106,36 @@ impl RequirementsMigrationSource {
 
     fn process_version_spec(&self, version_spec: &str) -> String {
         let version_spec = version_spec.trim();
-        if let Some(stripped) = version_spec.strip_prefix("==") {
+
+        // For version specs with multiple constraints, preserve as-is
+        if version_spec.contains(',') {
+            return version_spec.to_string();
+        }
+
+        // Handle special cases in order of precedence
+        if version_spec.starts_with("~=")
+            || version_spec.starts_with(">=")
+            || version_spec.starts_with("<=")
+            || version_spec.starts_with(">")
+            || version_spec.starts_with("<")
+            || version_spec.starts_with("!=")
+        {
+            // Preserve these operators as-is
+            version_spec.to_string()
+        } else if let Some(stripped) = version_spec.strip_prefix("==") {
+            // Remove double equals for exact versions
             stripped.to_string()
-        } else if let Some(stripped) = version_spec.strip_prefix(">=") {
-            stripped.to_string()
-        } else if let Some(stripped) = version_spec.strip_prefix("<=") {
-            stripped.to_string()
-        } else if let Some(stripped) = version_spec.strip_prefix('>') {
-            stripped.to_string()
-        } else if let Some(stripped) = version_spec.strip_prefix('<') {
-            stripped.to_string()
+        } else if let Some(stripped) = version_spec.strip_prefix('~') {
+            // Convert single tilde to tilde-equals
+            format!("~={}", stripped)
         } else {
+            // If no operator is present, preserve as-is
             version_spec.to_string()
         }
     }
 
     fn parse_requirement(&self, line: &str) -> Result<Option<Dependency>, String> {
-        // Handle editable installs
+        // Handle editable installs (-e flag)
         let line = if line.starts_with("-e") {
             let parts: Vec<&str> = line.splitn(2, ' ').collect();
             if parts.len() != 2 {
@@ -145,54 +158,9 @@ impl RequirementsMigrationSource {
         // Handle URLs and git repositories
         let (name, version) =
             if package_spec.starts_with("git+") || package_spec.starts_with("http") {
-                let name = if let Some(egg_part) = package_spec.split('#').last() {
-                    if egg_part.starts_with("egg=") {
-                        egg_part.trim_start_matches("egg=")
-                    } else if package_spec.ends_with(".whl") {
-                        package_spec
-                            .split('/')
-                            .last()
-                            .and_then(|f| f.split('-').next())
-                            .ok_or("Invalid wheel filename")?
-                    } else {
-                        return Err("Invalid URL format".to_string());
-                    }
-                } else {
-                    package_spec
-                        .split('/')
-                        .last()
-                        .and_then(|f| f.split('.').next())
-                        .ok_or("Invalid URL format")?
-                };
-                (name.to_string(), None)
+                self.parse_url_requirement(package_spec)?
             } else {
-                // Regular package specification
-                let (name, version) = {
-                    if !package_spec.contains(&['>', '<', '=', '~', '!'][..]) {
-                        (package_spec.to_string(), None)
-                    } else {
-                        let name_end = package_spec
-                            .find(|c| ['>', '<', '=', '~', '!'].contains(&c))
-                            .unwrap();
-                        let name = package_spec[..name_end].trim().to_string();
-                        let version_spec = package_spec[name_end..].trim();
-
-                        let version = if version_spec.contains(',') {
-                            // For multiple version constraints
-                            let version_parts: Vec<String> = version_spec
-                                .split(',')
-                                .map(|p| p.trim().to_string())
-                                .collect();
-                            Some(version_parts.join(","))
-                        } else {
-                            // For single version constraint
-                            Some(self.process_version_spec(version_spec))
-                        };
-
-                        (name, version)
-                    }
-                };
-                (name, version)
+                self.parse_regular_requirement(package_spec)?
             };
 
         if name == "python" {
@@ -212,5 +180,54 @@ impl RequirementsMigrationSource {
             dep_type: DependencyType::Main, // This will be overridden by the caller
             environment_markers,
         }))
+    }
+
+    fn parse_url_requirement(
+        &self,
+        package_spec: &str,
+    ) -> Result<(String, Option<String>), String> {
+        let name = if let Some(egg_part) = package_spec.split('#').last() {
+            if egg_part.starts_with("egg=") {
+                egg_part.trim_start_matches("egg=").to_string()
+            } else if package_spec.ends_with(".whl") {
+                package_spec
+                    .split('/')
+                    .last()
+                    .and_then(|f| f.split('-').next())
+                    .ok_or("Invalid wheel filename")?
+                    .to_string()
+            } else {
+                return Err("Invalid URL format".to_string());
+            }
+        } else {
+            package_spec
+                .split('/')
+                .last()
+                .and_then(|f| f.split('.').next())
+                .ok_or("Invalid URL format")?
+                .to_string()
+        };
+
+        Ok((name, None))
+    }
+
+    fn parse_regular_requirement(
+        &self,
+        package_spec: &str,
+    ) -> Result<(String, Option<String>), String> {
+        // Return early if no version specifier is present
+        if !package_spec.contains(&['>', '<', '=', '~', '!'][..]) {
+            return Ok((package_spec.to_string(), None));
+        }
+
+        let name_end = package_spec
+            .find(|c| ['>', '<', '=', '~', '!'].contains(&c))
+            .unwrap();
+        let name = package_spec[..name_end].trim().to_string();
+        let version_spec = package_spec[name_end..].trim();
+
+        let version = Some(self.process_version_spec(version_spec));
+
+        Ok((name, version))
     }
 }

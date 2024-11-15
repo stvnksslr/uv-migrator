@@ -51,8 +51,15 @@ sqlalchemy<2.0.0
     assert_eq!(requests_dep.dep_type, DependencyType::Main);
 
     let flask_dep = dependencies.iter().find(|d| d.name == "flask").unwrap();
-    assert_eq!(flask_dep.version, Some("2.0.0".to_string()));
+    assert_eq!(flask_dep.version, Some(">=2.0.0".to_string()));
     assert!(matches!(flask_dep.dep_type, DependencyType::Main));
+
+    let sqlalchemy_dep = dependencies
+        .iter()
+        .find(|d| d.name == "sqlalchemy")
+        .unwrap();
+    assert_eq!(sqlalchemy_dep.version, Some("<2.0.0".to_string()));
+    assert!(matches!(sqlalchemy_dep.dep_type, DependencyType::Main));
 }
 
 /// Test handling of comments and empty lines in requirements files.
@@ -223,6 +230,8 @@ flask>=2.0.0,<3.0.0
 requests~=2.31.0
 django>3.0.0,<=4.2.0
 sqlalchemy!=1.4.0,>=1.3.0
+django-filters~=23.5
+boto3~=1.35
     "#;
 
     let (_temp_dir, project_dir) = create_test_project(vec![("requirements.txt", content)]);
@@ -230,11 +239,36 @@ sqlalchemy!=1.4.0,>=1.3.0
     let source = RequirementsMigrationSource;
     let dependencies = source.extract_dependencies(&project_dir).unwrap();
 
-    assert_eq!(dependencies.len(), 4);
+    assert_eq!(dependencies.len(), 6);
 
     // Verify complex version constraints are preserved
     let flask_dep = dependencies.iter().find(|d| d.name == "flask").unwrap();
     assert_eq!(flask_dep.version, Some(">=2.0.0,<3.0.0".to_string()));
+
+    // Verify tilde-equal is preserved
+    let requests_dep = dependencies.iter().find(|d| d.name == "requests").unwrap();
+    assert_eq!(requests_dep.version, Some("~=2.31.0".to_string()));
+
+    // Verify multiple constraints with inequality
+    let django_dep = dependencies.iter().find(|d| d.name == "django").unwrap();
+    assert_eq!(django_dep.version, Some(">3.0.0,<=4.2.0".to_string()));
+
+    // Verify complex constraints with not-equal
+    let sqlalchemy_dep = dependencies
+        .iter()
+        .find(|d| d.name == "sqlalchemy")
+        .unwrap();
+    assert_eq!(sqlalchemy_dep.version, Some("!=1.4.0,>=1.3.0".to_string()));
+
+    // Verify tilde-equal cases
+    let filters_dep = dependencies
+        .iter()
+        .find(|d| d.name == "django-filters")
+        .unwrap();
+    assert_eq!(filters_dep.version, Some("~=23.5".to_string()));
+
+    let boto3_dep = dependencies.iter().find(|d| d.name == "boto3").unwrap();
+    assert_eq!(boto3_dep.version, Some("~=1.35".to_string()));
 }
 
 /// Test handling of editable installs and URLs.
@@ -257,12 +291,9 @@ git+https://github.com/user/other-project.git@v1.0.0#egg=other-project
     let dependencies = source.extract_dependencies(&project_dir).unwrap();
 
     assert_eq!(dependencies.len(), 3);
-
-    // Note: The exact assertions here will depend on how your implementation handles URLs
-    // You might want to add more specific assertions based on your implementation
 }
 
-/// Test error handling for malformed requirements files.
+/// Test handling of malformed requirements files.
 ///
 /// This test verifies that:
 /// 1. Invalid requirement formats are handled gracefully
