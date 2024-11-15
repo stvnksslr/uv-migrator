@@ -1,3 +1,5 @@
+// In migrators/poetry.rs
+
 use super::{MigrationSource, Dependency, DependencyType};
 use crate::types::PyProject;
 use std::path::Path;
@@ -27,11 +29,17 @@ impl MigrationSource for PoetryMigrationSource {
                     }
                 }
 
-                // Handle dev dependencies
+                // Handle group dependencies
                 if let Some(groups) = &poetry.group {
-                    for group in groups.values() {
+                    for (group_name, group) in groups {
+                        // Determine dependency type based on group name
+                        let dep_type = match group_name.as_str() {
+                            "dev" | "test" => DependencyType::Dev,
+                            _ => DependencyType::Group(group_name.clone())
+                        };
+
                         for (name, value) in &group.dependencies {
-                            if let Some(dep) = self.format_dependency(name, value, DependencyType::Dev) {
+                            if let Some(dep) = self.format_dependency(name, value, dep_type.clone()) {
                                 dependencies.push(dep);
                             }
                         }

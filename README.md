@@ -1,18 +1,27 @@
 # UV Migrator
 
-UV Migrator is a Rust-based tool designed to facilitate the migration of Python projects from various dependency management systems (like pip or poetry) to the UV package manager. This tool automates the process of creating a new UV-based project structure while preserving existing dependencies.
+UV Migrator is a Rust-based tool designed to facilitate the migration of Python projects from various dependency
+management systems (like pip or poetry) to the UV package manager. This tool automates the process of creating a new
+UV-based project structure while preserving existing dependencies.
+
+## Disclaimer
+
+This project is not associated with astral or the uv project in anyway, please use at your own risk and keep backups of
+your dependency declarations for reference
 
 ## Features
 
 - Supports migration from Poetry and PEP 621 project structures
 - Creates a new virtual environment using UV
-- Automatically transfers dependencies from the existing `pyproject.toml` or `requirements.txt` to the new UV-based project
+- Automatically transfers dependencies from the existing `pyproject.toml` or `requirements.txt` to the new UV-based
+  project
 - Attempts to migrate all [tool.*] configs to the new `pyproject.toml` file
 - Handles both main and development dependencies
 - Provides detailed logging for transparency and debugging
 - Supports importing extra index URLs from global pip configuration
 - Allows specifying additional index URLs during migration
-- By default doesnt pin the python version via a .python-versions file incase the user uses asdf/mise and .tool-versions files
+- By default, doesn't pin the python version via a .python-versions file in case the user uses asdf/mise and
+  .tool-versions files
 
 ## Prerequisites
 

@@ -6,8 +6,9 @@ pub mod requirements;
 
 use crate::utils::{create_virtual_environment, parse_pip_conf, update_pyproject_toml};
 pub use dependency::{Dependency, DependencyType};
-pub use detect::detect_project_type;
+pub use detect::{detect_project_type, ProjectType};
 use log::info;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -64,21 +65,31 @@ impl MigrationTool for UvTool {
         let uv_path =
             which::which("uv").map_err(|e| format!("Failed to find uv command: {}", e))?;
 
-        for dep_type in &[DependencyType::Main, DependencyType::Dev] {
-            let deps: Vec<_> = dependencies
-                .iter()
-                .filter(|d| d.dep_type == *dep_type)
-                .collect();
+        // Group dependencies by type
+        let mut grouped_deps: HashMap<&DependencyType, Vec<&Dependency>> = HashMap::new();
+        for dep in dependencies {
+            grouped_deps.entry(&dep.dep_type).or_default().push(dep);
+        }
 
+        // Process each group
+        for (dep_type, deps) in grouped_deps {
             if deps.is_empty() {
                 continue;
             }
 
             let mut command = std::process::Command::new(&uv_path);
             command.arg("add");
-            if *dep_type == DependencyType::Dev {
-                command.arg("--dev");
+
+            match dep_type {
+                DependencyType::Dev => {
+                    command.arg("--dev");
+                }
+                DependencyType::Group(group_name) => {
+                    command.arg("--group").arg(group_name);
+                }
+                DependencyType::Main => {} // No special flag needed
             }
+
             command.current_dir(project_dir);
 
             for dep in deps {
@@ -108,7 +119,10 @@ impl MigrationTool for UvTool {
                 command.arg(dep_str);
             }
 
-            info!("Running uv add command with dependencies: {:?}", command);
+            info!(
+                "Running uv add command for {:?} dependencies: {:?}",
+                dep_type, command
+            );
             let output = command
                 .output()
                 .map_err(|e| format!("Failed to execute uv command: {}", e))?;
@@ -138,8 +152,8 @@ pub fn run_migration(
     info!("Detected project type: {:?}", project_type);
 
     let migration_source: Box<dyn MigrationSource> = match project_type {
-        detect::ProjectType::Poetry => Box::new(poetry::PoetryMigrationSource),
-        detect::ProjectType::Requirements => Box::new(requirements::RequirementsMigrationSource),
+        ProjectType::Poetry => Box::new(poetry::PoetryMigrationSource),
+        ProjectType::Requirements => Box::new(requirements::RequirementsMigrationSource),
     };
 
     let dependencies = migration_source.extract_dependencies(project_dir)?;

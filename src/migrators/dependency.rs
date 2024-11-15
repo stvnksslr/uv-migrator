@@ -1,7 +1,9 @@
-#[derive(Debug, PartialEq, Clone)]
+// migrators/dependency.rs
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
 pub enum DependencyType {
     Main,
     Dev,
+    Group(String),
 }
 
 #[derive(Debug)]
