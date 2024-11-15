@@ -261,17 +261,42 @@ python = "^3.11"
 
 [tool.poetry.group.test.dependencies]
 blue = ">=0.9.1"
+pytest = "^8.0.0"
+pytest-cov = "^4.1.0"
 "#;
     let (_temp_dir, project_dir) = create_test_project(content);
 
     let source = PoetryMigrationSource;
     let dependencies = source.extract_dependencies(&project_dir).unwrap();
 
-    assert_eq!(dependencies.len(), 1);
+    // Should have all test dependencies (excluding python)
+    assert_eq!(dependencies.len(), 3, "Should have three test dependencies");
 
+    // Verify each dependency is in the test group
+    for dep in &dependencies {
+        match &dep.dep_type {
+            DependencyType::Group(name) => {
+                assert_eq!(name, "test", "Group name should be 'test'");
+            }
+            other => panic!("Expected Group(\"test\"), got {:?}", other),
+        }
+    }
+
+    // Check specific dependency details
     let blue_dep = dependencies.iter().find(|d| d.name == "blue").unwrap();
     assert_eq!(blue_dep.version, Some(">=0.9.1".to_string()));
-    assert_eq!(blue_dep.dep_type, DependencyType::Dev); // All group dependencies should be marked as Dev
+    assert!(matches!(blue_dep.dep_type, DependencyType::Group(ref name) if name == "test"));
+
+    let pytest_dep = dependencies.iter().find(|d| d.name == "pytest").unwrap();
+    assert_eq!(pytest_dep.version, Some("^8.0.0".to_string()));
+    assert!(matches!(pytest_dep.dep_type, DependencyType::Group(ref name) if name == "test"));
+
+    let pytest_cov_dep = dependencies
+        .iter()
+        .find(|d| d.name == "pytest-cov")
+        .unwrap();
+    assert_eq!(pytest_cov_dep.version, Some("^4.1.0".to_string()));
+    assert!(matches!(pytest_cov_dep.dep_type, DependencyType::Group(ref name) if name == "test"));
 }
 
 #[cfg(test)]
