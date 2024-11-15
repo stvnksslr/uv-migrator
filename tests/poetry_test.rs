@@ -123,11 +123,30 @@ mypy = "^1.11.1"
 
     assert_eq!(dependencies.len(), 4); // 1 main + 1 dev + 2 code-quality
 
+    // Check main dependencies
+    let main_deps: Vec<_> = dependencies
+        .iter()
+        .filter(|d| matches!(d.dep_type, DependencyType::Main))
+        .collect();
+    assert_eq!(main_deps.len(), 1);
+    assert_eq!(main_deps[0].name, "fastapi");
+
+    // Check dev dependencies
     let dev_deps: Vec<_> = dependencies
         .iter()
-        .filter(|d| d.dep_type == DependencyType::Dev)
+        .filter(|d| matches!(d.dep_type, DependencyType::Dev))
         .collect();
-    assert_eq!(dev_deps.len(), 3); // All non-main deps should be marked as Dev
+    assert_eq!(dev_deps.len(), 1);
+    assert_eq!(dev_deps[0].name, "pytest");
+
+    // Check code-quality group dependencies
+    let code_quality_deps: Vec<_> = dependencies
+        .iter()
+        .filter(|d| matches!(d.dep_type, DependencyType::Group(ref g) if g == "code-quality"))
+        .collect();
+    assert_eq!(code_quality_deps.len(), 2);
+    assert!(code_quality_deps.iter().any(|d| d.name == "ruff"));
+    assert!(code_quality_deps.iter().any(|d| d.name == "mypy"));
 }
 
 /// Test handling of dependencies with extras (optional features) in a Poetry project.
@@ -250,11 +269,9 @@ blue = ">=0.9.1"
 
     assert_eq!(dependencies.len(), 1);
 
-    let blue_dep = dependencies.iter()
-        .find(|d| d.name == "blue")
-        .unwrap();
+    let blue_dep = dependencies.iter().find(|d| d.name == "blue").unwrap();
     assert_eq!(blue_dep.version, Some(">=0.9.1".to_string()));
-    assert_eq!(blue_dep.dep_type, DependencyType::Dev);  // All group dependencies should be marked as Dev
+    assert_eq!(blue_dep.dep_type, DependencyType::Dev); // All group dependencies should be marked as Dev
 }
 
 #[cfg(test)]
@@ -294,10 +311,8 @@ description = "a module for parsing battlescribe rosters and allowing them to be
 authors = ["Test Author <test@example.com>"]
 license = "MIT"
 "#;
-        fs::write(
-            test_dir.path().join("old.pyproject.toml"),
-            old_content,
-        ).map_err(|e| format!("Failed to write old.pyproject.toml: {}", e))?;
+        fs::write(test_dir.path().join("old.pyproject.toml"), old_content)
+            .map_err(|e| format!("Failed to write old.pyproject.toml: {}", e))?;
 
         // Create new pyproject.toml with default content
         let new_content = r#"[project]
@@ -305,10 +320,8 @@ name = "test-project"
 version = "0.1.0"
 description = "Add your description here"
 "#;
-        fs::write(
-            test_dir.path().join("pyproject.toml"),
-            new_content,
-        ).map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
+        fs::write(test_dir.path().join("pyproject.toml"), new_content)
+            .map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
 
         // Run the migration
         update_pyproject_toml(test_dir.path(), &[])?;
@@ -318,7 +331,10 @@ description = "Add your description here"
             .map_err(|e| format!("Failed to read result: {}", e))?;
 
         // Verify the changes
-        assert!(result.contains(r#"version = "1.3.0""#), "Version was not updated correctly");
+        assert!(
+            result.contains(r#"version = "1.3.0""#),
+            "Version was not updated correctly"
+        );
         assert!(result.contains(r#"description = "a module for parsing battlescribe rosters and allowing them to be printed or displayed cleanly""#),
                 "Description was not updated correctly");
 
@@ -346,10 +362,8 @@ version = "1.3.0"
 authors = ["Test Author <test@example.com>"]
 license = "MIT"
 "#;
-        fs::write(
-            test_dir.path().join("old.pyproject.toml"),
-            old_content,
-        ).map_err(|e| format!("Failed to write old.pyproject.toml: {}", e))?;
+        fs::write(test_dir.path().join("old.pyproject.toml"), old_content)
+            .map_err(|e| format!("Failed to write old.pyproject.toml: {}", e))?;
 
         // Create new pyproject.toml with default content
         let new_content = r#"[project]
@@ -357,10 +371,8 @@ name = "test-project"
 version = "0.1.0"
 description = "Add your description here"
 "#;
-        fs::write(
-            test_dir.path().join("pyproject.toml"),
-            new_content,
-        ).map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
+        fs::write(test_dir.path().join("pyproject.toml"), new_content)
+            .map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
 
         // Run the migration
         update_pyproject_toml(test_dir.path(), &[])?;
@@ -370,9 +382,14 @@ description = "Add your description here"
             .map_err(|e| format!("Failed to read result: {}", e))?;
 
         // Verify the changes
-        assert!(result.contains(r#"version = "1.3.0""#), "Version was not updated correctly");
-        assert!(result.contains(r#"description = "Add your description here""#),
-                "Description should remain unchanged when not present in Poetry file");
+        assert!(
+            result.contains(r#"version = "1.3.0""#),
+            "Version was not updated correctly"
+        );
+        assert!(
+            result.contains(r#"description = "Add your description here""#),
+            "Description should remain unchanged when not present in Poetry file"
+        );
 
         Ok(())
     }
@@ -397,10 +414,8 @@ name = "test-project"
 version = "0.1.0"
 description = "Add your description here"
 "#;
-        fs::write(
-            test_dir.path().join("pyproject.toml"),
-            new_content,
-        ).map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
+        fs::write(test_dir.path().join("pyproject.toml"), new_content)
+            .map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
 
         // Run the migration
         update_pyproject_toml(test_dir.path(), &[])?;
@@ -410,7 +425,10 @@ description = "Add your description here"
             .map_err(|e| format!("Failed to read result: {}", e))?;
 
         // Verify nothing changed
-        assert_eq!(result, new_content, "File should remain unchanged when no old.pyproject.toml exists");
+        assert_eq!(
+            result, new_content,
+            "File should remain unchanged when no old.pyproject.toml exists"
+        );
 
         Ok(())
     }

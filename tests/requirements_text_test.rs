@@ -84,12 +84,13 @@ requests==2.31.0  # HTTP client
     assert_eq!(dependencies.len(), 3);
 }
 
-/// Test handling of multiple requirements files (main and dev requirements).
+/// Test handling of multiple requirements files (main, dev, and test requirements).
 ///
 /// This test verifies that:
-/// 1. Both main and dev requirements are processed
-/// 2. Dependencies are correctly categorized as main or dev
-/// 3. All files are properly parsed
+/// 1. Requirements from all files are processed
+/// 2. Dependencies are correctly categorized into main, dev, and test groups
+/// 3. The correct number of dependencies are found in each category
+/// 4. Specific packages are found in their expected categories
 #[test]
 fn test_multiple_requirements_files() {
     let main_content = "flask==2.0.0\nrequests==2.31.0";
@@ -105,19 +106,80 @@ fn test_multiple_requirements_files() {
     let source = RequirementsMigrationSource;
     let dependencies = source.extract_dependencies(&project_dir).unwrap();
 
-    assert_eq!(dependencies.len(), 6);
+    // Verify total number of dependencies
+    assert_eq!(
+        dependencies.len(),
+        6,
+        "Total number of dependencies should be 6"
+    );
 
+    // Check main dependencies
     let main_deps: Vec<_> = dependencies
         .iter()
-        .filter(|d| d.dep_type == DependencyType::Main)
+        .filter(|d| matches!(d.dep_type, DependencyType::Main))
         .collect();
-    assert_eq!(main_deps.len(), 2);
+    assert_eq!(main_deps.len(), 2, "Should have 2 main dependencies");
+    assert!(
+        main_deps.iter().any(|d| d.name == "flask"),
+        "Main dependencies should include flask"
+    );
+    assert!(
+        main_deps.iter().any(|d| d.name == "requests"),
+        "Main dependencies should include requests"
+    );
 
+    // Check dev dependencies
     let dev_deps: Vec<_> = dependencies
         .iter()
-        .filter(|d| d.dep_type == DependencyType::Dev)
+        .filter(|d| matches!(d.dep_type, DependencyType::Dev))
         .collect();
-    assert_eq!(dev_deps.len(), 4);
+    assert_eq!(dev_deps.len(), 2, "Should have 2 dev dependencies");
+    assert!(
+        dev_deps.iter().any(|d| d.name == "pytest"),
+        "Dev dependencies should include pytest"
+    );
+    assert!(
+        dev_deps.iter().any(|d| d.name == "black"),
+        "Dev dependencies should include black"
+    );
+
+    // Check test dependencies
+    let test_deps: Vec<_> = dependencies
+        .iter()
+        .filter(|d| matches!(d.dep_type, DependencyType::Group(ref g) if g == "test"))
+        .collect();
+    assert_eq!(test_deps.len(), 2, "Should have 2 test dependencies");
+    assert!(
+        test_deps.iter().any(|d| d.name == "pytest-cov"),
+        "Test dependencies should include pytest-cov"
+    );
+    assert!(
+        test_deps.iter().any(|d| d.name == "pytest-mock"),
+        "Test dependencies should include pytest-mock"
+    );
+
+    // Verify versions for a sample of dependencies
+    if let Some(flask_dep) = dependencies.iter().find(|d| d.name == "flask") {
+        assert_eq!(
+            flask_dep.version,
+            Some("2.0.0".to_string()),
+            "Flask version should be 2.0.0"
+        );
+    }
+    if let Some(pytest_dep) = dependencies.iter().find(|d| d.name == "pytest") {
+        assert_eq!(
+            pytest_dep.version,
+            Some("7.0.0".to_string()),
+            "Pytest version should be 7.0.0"
+        );
+    }
+    if let Some(pytest_cov_dep) = dependencies.iter().find(|d| d.name == "pytest-cov") {
+        assert_eq!(
+            pytest_cov_dep.version,
+            Some("4.1.0".to_string()),
+            "Pytest-cov version should be 4.1.0"
+        );
+    }
 }
 
 /// Test handling of environment markers in requirements.

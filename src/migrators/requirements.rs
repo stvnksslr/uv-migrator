@@ -1,4 +1,5 @@
-use super::{Dependency, DependencyType, MigrationSource};
+use super::dependency::DependencyType;
+use super::{Dependency, MigrationSource};
 use log::{debug, info};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,28 +8,17 @@ pub struct RequirementsMigrationSource;
 
 impl MigrationSource for RequirementsMigrationSource {
     fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>, String> {
-        let (main_requirements, dev_requirements) = self.find_requirements_files(project_dir);
-
-        if main_requirements.is_none() && dev_requirements.is_empty() {
+        let requirements_files = self.find_requirements_files(project_dir);
+        if requirements_files.is_empty() {
             return Err("No requirements files found.".to_string());
         }
 
         let mut dependencies = Vec::new();
-
-        // Process main requirements (requirements.txt)
-        if let Some(main_file) = main_requirements {
-            info!("Processing main requirements file: {}", main_file.display());
-            let main_deps = self.process_requirements_file(&main_file, DependencyType::Main)?;
-            debug!("Extracted {} main dependencies", main_deps.len());
-            dependencies.extend(main_deps);
-        }
-
-        // Process dev requirements (requirements-*.txt)
-        for dev_file in dev_requirements {
-            info!("Processing dev requirements file: {}", dev_file.display());
-            let dev_deps = self.process_requirements_file(&dev_file, DependencyType::Dev)?;
-            debug!("Extracted {} dev dependencies", dev_deps.len());
-            dependencies.extend(dev_deps);
+        for (file_path, dep_type) in requirements_files {
+            info!("Processing requirements file: {}", file_path.display());
+            let deps = self.process_requirements_file(&file_path, dep_type)?;
+            debug!("Extracted {} dependencies", deps.len());
+            dependencies.extend(deps);
         }
 
         debug!("Total dependencies extracted: {}", dependencies.len());
@@ -37,9 +27,8 @@ impl MigrationSource for RequirementsMigrationSource {
 }
 
 impl RequirementsMigrationSource {
-    fn find_requirements_files(&self, dir: &Path) -> (Option<PathBuf>, Vec<PathBuf>) {
-        let mut main_requirements = None;
-        let mut dev_requirements = Vec::new();
+    fn find_requirements_files(&self, dir: &Path) -> Vec<(PathBuf, DependencyType)> {
+        let mut requirements_files = Vec::new();
 
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.filter_map(Result::ok) {
@@ -47,20 +36,31 @@ impl RequirementsMigrationSource {
                 if path.is_file() {
                     if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                         if file_name == "requirements.txt" {
-                            main_requirements = Some(path.clone());
+                            requirements_files.push((path.clone(), DependencyType::Main));
                             info!("Found main requirements file: {}", path.display());
                         } else if file_name.starts_with("requirements-")
                             && file_name.ends_with(".txt")
                         {
-                            dev_requirements.push(path.clone());
-                            info!("Found dev requirements file: {}", path.display());
+                            let group_name = file_name
+                                .strip_prefix("requirements-")
+                                .unwrap()
+                                .strip_suffix(".txt")
+                                .unwrap();
+
+                            let dep_type = match group_name {
+                                "dev" => DependencyType::Dev,
+                                _ => DependencyType::Group(group_name.to_string()),
+                            };
+
+                            requirements_files.push((path.clone(), dep_type));
+                            info!("Found {} requirements file: {}", group_name, path.display());
                         }
                     }
                 }
             }
         }
 
-        (main_requirements, dev_requirements)
+        requirements_files
     }
 
     fn process_requirements_file(
