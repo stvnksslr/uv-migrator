@@ -16,6 +16,8 @@ your dependency declarations for reference
 - Automatically transfers dependencies from the existing `pyproject.toml` or `requirements.txt` to the new UV-based
   project
 - Attempts to migrate all [tool.*] configs to the new `pyproject.toml` file
+- By default, if using dependency groups in poetry or `requirements-some_group_name.txt` with req files they will be
+  translated into uv dependency groups otherwise they will use the main and --dev conventions
 - Handles both main and development dependencies
 - Provides detailed logging for transparency and debugging
 - Supports importing extra index URLs from global pip configuration
