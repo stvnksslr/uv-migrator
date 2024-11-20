@@ -34,7 +34,15 @@ Before you begin, ensure you have the following installed:
 
 ## Installation
 
+Install to .local/bin
+
+```sh
+curl https://uv-migrator.stvnksslr.com/install.sh | bash
 ```
+
+Install via Cargo
+
+```sh
 cargo install uv-migrator
 ```
 
@@ -42,27 +50,27 @@ The compiled binary will be available in the `target/release` directory.
 
 ## Supported Package Managers
 
-* poetry
-* pip (requirements.txt)
+- poetry
+- pip (requirements.txt)
 
 ## In Progress
 
-* pdm
-* hatch
-* pipenv
-* Open Issues for more!
+- pdm
+- hatch
+- pipenv
+- Open Issues for more!
 
 ## Usage
 
 Run the UV Migrator with the path to your existing project directory:
 
-```
+```sh
 uv-migrator path/to/your/project
 ```
 
 or
 
-```
+```sh
 1. cd /to/project
 2. uv-migrator .
 ```
@@ -70,21 +78,25 @@ or
 ### Additional Options
 
 - `--import-global-pip-conf`: Import extra index URLs from `~/.pip/pip.conf`
+
   ```bash
   uv-migrator path/to/your/project --import-global-pip-conf
   ```
 
 - `--import-index`: Specify additional index URLs to import (can be used multiple times)
+
   ```bash
   uv-migrator path/to/your/project --import-index https://custom.pypi.org/simple/
   ```
 
 - `--help`: Display comprehensive help information
+
   ```bash
   uv-migrator --help
   ```
 
 - `--self-update`: Update UV Migrator to the latest version
+
   ```bash
   uv-migrator --self-update
   ```
