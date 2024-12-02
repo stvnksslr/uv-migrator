@@ -7,7 +7,12 @@ use uv_migrator::utils::FileTrackerGuard;
 mod tests {
     use super::*;
 
-    // Helper function to create a temporary directory and file
+    /// Creates a temporary test environment with directory and file.
+    ///
+    /// Returns:
+    /// - TempDir: The temporary directory handle (automatically cleaned up when dropped)
+    /// - PathBuf: Path to the project directory
+    /// - PathBuf: Path to a test file within the project directory
     fn setup_test_environment() -> (TempDir, PathBuf, PathBuf) {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path().to_path_buf();
@@ -16,6 +21,11 @@ mod tests {
         (temp_dir, project_dir, test_file)
     }
 
+    /// Tests that a new file can be tracked successfully.
+    ///
+    /// This test verifies that:
+    /// 1. A file can be added to tracking
+    /// 2. The tracking operation completes without errors
     #[test]
     fn test_track_new_file() {
         let (_temp_dir, _project_dir, test_file) = setup_test_environment();
@@ -24,6 +34,11 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    /// Tests that tracking the same file twice is idempotent.
+    ///
+    /// This test verifies that:
+    /// 1. A file can be tracked multiple times
+    /// 2. Subsequent tracking of the same file doesn't cause errors
     #[test]
     fn test_track_same_file_twice() {
         let (_temp_dir, _project_dir, test_file) = setup_test_environment();
@@ -33,6 +48,11 @@ mod tests {
         assert!(guard.track_file(&test_file).is_ok());
     }
 
+    /// Tests file rename tracking functionality.
+    ///
+    /// This test verifies that:
+    /// 1. A file rename operation can be tracked
+    /// 2. The tracking completes successfully
     #[test]
     fn test_track_rename() {
         let (_temp_dir, project_dir, test_file) = setup_test_environment();
@@ -43,6 +63,11 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    /// Tests handling of rename operations with nonexistent source files.
+    ///
+    /// This test verifies that:
+    /// 1. Attempting to track a rename of a nonexistent file results in an error
+    /// 2. The error message correctly indicates the file doesn't exist
     #[test]
     fn test_track_rename_nonexistent_file() {
         let (_temp_dir, project_dir, _test_file) = setup_test_environment();
@@ -55,6 +80,12 @@ mod tests {
         assert!(result.unwrap_err().contains("does not exist"));
     }
 
+    /// Tests automatic rollback functionality of FileTrackerGuard.
+    ///
+    /// This test verifies that:
+    /// 1. When force_rollback is called, the guard restores files
+    /// 2. Files are restored to their original state
+    /// 3. The rollback occurs when the guard is dropped
     #[test]
     fn test_file_tracker_guard_auto_rollback() {
         let (_temp_dir, project_dir, _) = setup_test_environment();
@@ -79,6 +110,12 @@ mod tests {
         assert_eq!(content, "original content");
     }
 
+    /// Tests that rollback properly restores files to their original state.
+    ///
+    /// This test verifies that:
+    /// 1. Files are properly backed up during rename operations
+    /// 2. Original content is preserved
+    /// 3. Rollback restores both the file and its content
     #[test]
     fn test_rollback_restores_files() {
         let (_temp_dir, project_dir, _) = setup_test_environment();
@@ -101,6 +138,12 @@ mod tests {
         assert_eq!(content, "original content");
     }
 
+    /// Tests handling of files in nested directories.
+    ///
+    /// This test verifies that:
+    /// 1. Files in nested directories can be tracked
+    /// 2. Parent directories are properly handled
+    /// 3. Tracking works with deep directory structures
     #[test]
     fn test_nested_directory_creation() {
         let temp_dir = TempDir::new().unwrap();
@@ -116,6 +159,12 @@ mod tests {
         assert!(guard.track_file(&nested_path).is_ok());
     }
     
+    /// Tests tracking of multiple file operations.
+    ///
+    /// This test verifies that:
+    /// 1. Multiple files can be tracked simultaneously
+    /// 2. Different operations (track and rename) can be mixed
+    /// 3. All operations complete successfully
     #[test]
     fn test_multiple_operations() {
         let (_temp_dir, project_dir, _) = setup_test_environment();
