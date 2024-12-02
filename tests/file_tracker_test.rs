@@ -1,180 +1,138 @@
-use log::{debug, error, info};
-use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use tempfile::TempDir;
+use uv_migrator::utils::FileTrackerGuard;
 
-#[derive(Debug)]
-pub enum FileAction {
-    Created,
-    Renamed {
-        source_path: PathBuf,
-        source_content: Vec<u8>,
-    },
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[derive(Debug)]
-pub struct FileChange {
-    pub(crate) action: FileAction,
-}
+    // Helper function to create a temporary directory and file
+    fn setup_test_environment() -> (TempDir, PathBuf, PathBuf) {
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+        let test_file = project_dir.join("test.txt");
+        fs::write(&test_file, "test content").unwrap();
+        (temp_dir, project_dir, test_file)
+    }
 
-pub struct FileTracker {
-    pub(crate) changes: HashMap<PathBuf, FileChange>,
-}
+    #[test]
+    fn test_track_new_file() {
+        let (_temp_dir, _project_dir, test_file) = setup_test_environment();
+        let mut guard = FileTrackerGuard::new();
+        let result = guard.track_file(&test_file);
+        assert!(result.is_ok());
+    }
 
-impl FileTracker {
-    pub fn new() -> Self {
-        FileTracker {
-            changes: HashMap::new(),
+    #[test]
+    fn test_track_same_file_twice() {
+        let (_temp_dir, _project_dir, test_file) = setup_test_environment();
+        let mut guard = FileTrackerGuard::new();
+        
+        assert!(guard.track_file(&test_file).is_ok());
+        assert!(guard.track_file(&test_file).is_ok());
+    }
+
+    #[test]
+    fn test_track_rename() {
+        let (_temp_dir, project_dir, test_file) = setup_test_environment();
+        let new_path = project_dir.join("renamed.txt");
+        let mut guard = FileTrackerGuard::new();
+        
+        let result = guard.track_rename(&test_file, &new_path);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_track_rename_nonexistent_file() {
+        let (_temp_dir, project_dir, _test_file) = setup_test_environment();
+        let nonexistent = project_dir.join("nonexistent.txt");
+        let new_path = project_dir.join("renamed.txt");
+        let mut guard = FileTrackerGuard::new();
+        
+        let result = guard.track_rename(&nonexistent, &new_path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not exist"));
+    }
+
+    #[test]
+    fn test_file_tracker_guard_auto_rollback() {
+        let (_temp_dir, project_dir, _) = setup_test_environment();
+        let pyproject_path = project_dir.join("pyproject.toml");
+        let backup_path = project_dir.join("old.pyproject.toml");
+        
+        // Create initial pyproject.toml
+        fs::write(&pyproject_path, "original content").unwrap();
+        
+        {
+            let mut guard = FileTrackerGuard::new();
+            guard.track_rename(&pyproject_path, &backup_path).unwrap();
+            fs::rename(&pyproject_path, &backup_path).unwrap();
+            
+            // Force rollback
+            guard.force_rollback();
+        } // Guard is dropped here
+        
+        // Verify original file is restored
+        assert!(pyproject_path.exists());
+        let content = fs::read_to_string(&pyproject_path).unwrap();
+        assert_eq!(content, "original content");
+    }
+
+    #[test]
+    fn test_rollback_restores_files() {
+        let (_temp_dir, project_dir, _) = setup_test_environment();
+        let pyproject_path = project_dir.join("pyproject.toml");
+        let backup_path = project_dir.join("old.pyproject.toml");
+        
+        // Create and track initial pyproject.toml
+        fs::write(&pyproject_path, "original content").unwrap();
+        
+        {
+            let mut guard = FileTrackerGuard::new();
+            guard.track_rename(&pyproject_path, &backup_path).unwrap();
+            fs::rename(&pyproject_path, &backup_path).unwrap();
+            fs::write(&pyproject_path, "new content").unwrap();
+            guard.force_rollback();
+        } // Guard is dropped here
+        
+        assert!(pyproject_path.exists());
+        let content = fs::read_to_string(&pyproject_path).unwrap();
+        assert_eq!(content, "original content");
+    }
+
+    #[test]
+    fn test_nested_directory_creation() {
+        let temp_dir = TempDir::new().unwrap();
+        let nested_path = temp_dir.path().join("nested").join("dir").join("file.txt");
+        
+        // Create parent directories first
+        if let Some(parent) = nested_path.parent() {
+            fs::create_dir_all(parent).unwrap();
         }
+        fs::write(&nested_path, "test content").unwrap();
+        
+        let mut guard = FileTrackerGuard::new();
+        assert!(guard.track_file(&nested_path).is_ok());
     }
-
-    pub fn track_file(&mut self, path: &Path) -> Result<(), String> {
-        debug!("Attempting to track file: {}", path.display());
-        if self.changes.contains_key(path) {
-            debug!("File already being tracked: {}", path.display());
-            return Ok(());
-        }
-        self.changes.insert(
-            path.to_path_buf(),
-            FileChange {
-                action: FileAction::Created,
-            },
-        );
-        info!("Successfully started tracking file: {}", path.display());
-        Ok(())
-    }
-
-    pub fn track_rename(&mut self, from: &Path, to: &Path) -> Result<(), String> {
-        debug!(
-            "Attempting to track rename from '{}' to '{}'",
-            from.display(),
-            to.display()
-        );
-        if !from.exists() {
-            return Err(format!("Source file '{}' does not exist", from.display()));
-        }
-        let source_content = fs::read(from).map_err(|e| {
-            format!(
-                "Failed to read source file '{}' for tracking: {}",
-                from.display(),
-                e
-            )
-        })?;
-        self.changes.insert(
-            to.to_path_buf(),
-            FileChange {
-                action: FileAction::Renamed {
-                    source_path: from.to_path_buf(),
-                    source_content,
-                },
-            },
-        );
-        info!(
-            "Successfully tracked rename operation: '{}' → '{}'",
-            from.display(),
-            to.display()
-        );
-        Ok(())
-    }
-
-    fn ensure_parent_dir_exists(path: &Path) -> Result<(), String> {
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                debug!("Creating parent directory: {}", parent.display());
-                fs::create_dir_all(parent).map_err(|e| {
-                    format!(
-                        "Failed to create parent directory '{}': {}",
-                        parent.display(),
-                        e
-                    )
-                })?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn rollback(&self) -> Result<(), String> {
-        if self.changes.is_empty() {
-            info!("No changes to roll back");
-            return Ok(());
-        }
-        info!("Starting rollback sequence");
-        let pyproject_path = Path::new("pyproject.toml");
-        if pyproject_path.exists() {
-            info!("Phase 1: Removing current pyproject.toml");
-            fs::remove_file(pyproject_path)
-                .map_err(|e| format!("Failed to remove pyproject.toml: {}", e))?;
-        }
-        info!("Phase 2: Restoring original pyproject.toml");
-        for change in self.changes.values() {
-            if let FileAction::Renamed {
-                source_path,
-                source_content,
-            } = &change.action
-            {
-                if source_path.ends_with("pyproject.toml") {
-                    Self::ensure_parent_dir_exists(source_path)?;
-                    fs::write(source_path, source_content)
-                        .map_err(|e| format!("Failed to restore pyproject.toml: {}", e))?;
-                    if !source_path.exists() {
-                        return Err("Failed to verify restored pyproject.toml".to_string());
-                    }
-                    info!("Successfully restored pyproject.toml");
-                    return Ok(());
-                }
-            }
-        }
-        Err("Could not find original pyproject.toml to restore".to_string())
-    }
-}
-
-pub struct FileTrackerGuard {
-    tracker: FileTracker,
-    should_rollback: bool,
-    has_performed_rollback: bool,
-}
-
-impl Default for FileTrackerGuard {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl FileTrackerGuard {
-    pub fn new() -> Self {
-        FileTrackerGuard {
-            tracker: FileTracker::new(),
-            should_rollback: false,
-            has_performed_rollback: false,
-        }
-    }
-
-    pub fn track_file(&mut self, path: &Path) -> Result<(), String> {
-        self.tracker.track_file(path)
-    }
-
-    pub fn track_rename(&mut self, from: &Path, to: &Path) -> Result<(), String> {
-        self.tracker.track_rename(from, to)
-    }
-
-    pub fn force_rollback(&mut self) {
-        self.should_rollback = true;
-    }
-
-    fn perform_rollback(&mut self) {
-        if !self.has_performed_rollback {
-            if let Err(e) = self.tracker.rollback() {
-                error!("Error during rollback: {}", e);
-            }
-            self.has_performed_rollback = true;
-        }
-    }
-}
-
-impl Drop for FileTrackerGuard {
-    fn drop(&mut self) {
-        if std::thread::panicking() || self.should_rollback {
-            self.perform_rollback();
-        }
+    
+    #[test]
+    fn test_multiple_operations() {
+        let (_temp_dir, project_dir, _) = setup_test_environment();
+        let mut guard = FileTrackerGuard::new();
+        
+        let file1 = project_dir.join("file1.txt");
+        let file2 = project_dir.join("file2.txt");
+        let file3 = project_dir.join("file3.txt");
+        
+        fs::write(&file1, "content1").unwrap();
+        fs::write(&file2, "content2").unwrap();
+        
+        // Track multiple files
+        assert!(guard.track_file(&file1).is_ok());
+        assert!(guard.track_file(&file2).is_ok());
+        
+        // Perform a rename
+        assert!(guard.track_rename(&file1, &file3).is_ok());
     }
 }

@@ -14,11 +14,17 @@ pub enum FileAction {
 
 #[derive(Debug)]
 pub struct FileChange {
-    action: FileAction,
+    pub action: FileAction,
 }
 
 pub struct FileTracker {
-    changes: HashMap<PathBuf, FileChange>,
+    pub(crate) changes: HashMap<PathBuf, FileChange>,
+}
+
+impl Default for FileTracker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FileTracker {
@@ -34,7 +40,6 @@ impl FileTracker {
             debug!("File already being tracked: {}", path.display());
             return Ok(());
         }
-
         self.changes.insert(
             path.to_path_buf(),
             FileChange {
@@ -54,7 +59,6 @@ impl FileTracker {
         if !from.exists() {
             return Err(format!("Source file '{}' does not exist", from.display()));
         }
-
         let source_content = fs::read(from).map_err(|e| {
             format!(
                 "Failed to read source file '{}' for tracking: {}",
@@ -62,7 +66,6 @@ impl FileTracker {
                 e
             )
         })?;
-
         self.changes.insert(
             to.to_path_buf(),
             FileChange {
@@ -72,7 +75,6 @@ impl FileTracker {
                 },
             },
         );
-
         info!(
             "Successfully tracked rename operation: '{}' → '{}'",
             from.display(),
@@ -81,7 +83,7 @@ impl FileTracker {
         Ok(())
     }
 
-    fn ensure_parent_dir_exists(path: &Path) -> Result<(), String> {
+    pub(crate) fn ensure_parent_dir_exists(path: &Path) -> Result<(), String> {
         if let Some(parent) = path.parent() {
             if !parent.exists() {
                 debug!("Creating parent directory: {}", parent.display());
@@ -102,18 +104,13 @@ impl FileTracker {
             info!("No changes to roll back");
             return Ok(());
         }
-
         info!("Starting rollback sequence");
-
-        // Step 1: Delete current pyproject.toml if it exists
         let pyproject_path = Path::new("pyproject.toml");
         if pyproject_path.exists() {
             info!("Phase 1: Removing current pyproject.toml");
             fs::remove_file(pyproject_path)
                 .map_err(|e| format!("Failed to remove pyproject.toml: {}", e))?;
         }
-
-        // Step 2: Restore the original pyproject.toml from backup
         info!("Phase 2: Restoring original pyproject.toml");
         for change in self.changes.values() {
             if let FileAction::Renamed {
@@ -125,18 +122,14 @@ impl FileTracker {
                     Self::ensure_parent_dir_exists(source_path)?;
                     fs::write(source_path, source_content)
                         .map_err(|e| format!("Failed to restore pyproject.toml: {}", e))?;
-
-                    // Verify the restore worked
                     if !source_path.exists() {
                         return Err("Failed to verify restored pyproject.toml".to_string());
                     }
-
                     info!("Successfully restored pyproject.toml");
                     return Ok(());
                 }
             }
         }
-
         Err("Could not find original pyproject.toml to restore".to_string())
     }
 }
