@@ -115,7 +115,7 @@ impl FileTracker {
 
         // Step 2: Restore the original pyproject.toml from backup
         info!("Phase 2: Restoring original pyproject.toml");
-        for (_, change) in &self.changes {
+        for change in self.changes.values() {
             if let FileAction::Renamed {
                 source_path,
                 source_content,
@@ -145,6 +145,12 @@ pub struct FileTrackerGuard {
     tracker: FileTracker,
     should_rollback: bool,
     has_performed_rollback: bool,
+}
+
+impl Default for FileTrackerGuard {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FileTrackerGuard {
