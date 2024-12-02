@@ -15,6 +15,13 @@ fn main() {
     }
     env_logger::init();
 
+    if let Err(e) = run() {
+        error!("{}", e);
+        exit(1);
+    }
+}
+
+fn run() -> Result<(), String> {
     let matches = Command::new("uv-migrator")
         .version(env!("CARGO_PKG_VERSION"))
         .about("A tool for migrating Python projects to use the uv package manager")
@@ -87,24 +94,18 @@ fn main() {
         .get_matches();
 
     if matches.get_flag("self-update") {
-        match utils::update() {
-            Ok(_) => exit(0),
-            Err(e) => {
-                error!("Failed to update: {}", e);
-                exit(1);
-            }
-        }
+        return match utils::update() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to update: {}", e)),
+        };
     }
 
     if !matches.contains_id("PATH") {
-        error!("No path provided. Use --help for usage information.");
-        exit(1);
+        return Err("No path provided. Use --help for usage information.".to_string());
     }
 
-    // Check UV requirements before proceeding
     if let Err(e) = check_uv_requirements() {
-        error!("{}", e);
-        exit(1);
+        return Err(e);
     }
 
     let input_path = Path::new(matches.get_one::<String>("PATH").unwrap());
@@ -121,10 +122,10 @@ fn main() {
         .unwrap_or_default();
 
     match migrators::run_migration(&project_dir, import_global_pip_conf, &additional_index_urls) {
-        Ok(_) => info!("Migration completed successfully"),
-        Err(e) => {
-            error!("Error during migration: {}", e);
-            exit(1);
+        Ok(_) => {
+            info!("Migration completed successfully");
+            Ok(())
         }
+        Err(e) => Err(format!("Migration failed: {}", e)),
     }
 }
