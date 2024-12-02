@@ -25,7 +25,6 @@ pub fn check_uv_requirements() -> Result<(), String> {
 
     let version_output = String::from_utf8_lossy(&output.stdout);
     let version_str = version_output
-        .trim()
         .split_whitespace()
         .nth(1)
         .ok_or_else(|| "Unexpected uv version format".to_string())?;

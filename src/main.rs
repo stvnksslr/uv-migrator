@@ -104,9 +104,7 @@ fn run() -> Result<(), String> {
         return Err("No path provided. Use --help for usage information.".to_string());
     }
 
-    if let Err(e) = check_uv_requirements() {
-        return Err(e);
-    }
+    check_uv_requirements()?;
 
     let input_path = Path::new(matches.get_one::<String>("PATH").unwrap());
     let project_dir = if input_path.is_dir() {
