@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2024.8.0](https://github.com/stvnksslr/uv-migrator/compare/v2024.7.4...v2024.8.0) - 2024-12-02
+
+### Added
+- *(rollback tests)* basic tests for the rollback feature (by @stvnksslr)
+- *(rollback)* when an error migrating is throw, revert back to an actionable state, this allows for better feedback loop in trying to work on projects that may have dependencies that are in conflict which is allowed by pip (by @stvnksslr)
+
+### Fixed
+- *(linting)* clippy --fix (by @stvnksslr)
+- *(linting)* clippy --fix (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2024.7.4](https://github.com/stvnksslr/uv-migrator/compare/v2024.7.3...v2024.7.4) - 2024-11-20
 
 ### Added
