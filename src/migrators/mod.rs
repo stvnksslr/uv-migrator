@@ -55,6 +55,7 @@ impl MigrationTool for UvTool {
 
         let uv_path =
             which::which("uv").map_err(|e| format!("Failed to find uv command: {}", e))?;
+
         let output = std::process::Command::new(&uv_path)
             .arg("init")
             .arg("--no-pin-python")
@@ -107,9 +108,7 @@ impl MigrationTool for UvTool {
             for dep in deps {
                 let mut dep_str = if let Some(version) = &dep.version {
                     let version = version.trim();
-                    if version.contains(',') {
-                        format!("{}{}", dep.name, version)
-                    } else if version.starts_with("~=") {
+                    if version.contains(',') || version.starts_with("~=") {
                         format!("{}{}", dep.name, version)
                     } else if let Some(stripped) = version.strip_prefix('~') {
                         format!("{}~={}", dep.name, stripped)
@@ -213,7 +212,7 @@ pub fn run_migration(
         let migration_error = result.unwrap_err();
         file_tracker.force_rollback();
         drop(file_tracker);
-        
+
         if !pyproject_path.exists() {
             return Err(format!(
                 "{}\nError: Rollback failed - pyproject.toml was not restored.",
