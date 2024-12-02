@@ -1,4 +1,4 @@
-mod file_tracker;
+pub mod file_tracker;
 mod pip;
 mod pyproject;
 mod update;
