@@ -1,9 +1,9 @@
+use crate::utils::check_uv_requirements;
 use clap::{Arg, Command};
 use log::{error, info};
 use std::env;
 use std::path::Path;
 use std::process::exit;
-use crate::utils::check_uv_requirements;
 
 mod migrators;
 mod types;

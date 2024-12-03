@@ -1,5 +1,5 @@
-use std::path::Path;
 use log::info;
+use std::path::Path;
 
 #[derive(Debug, PartialEq)]
 pub enum ProjectType {
@@ -28,8 +28,13 @@ fn has_poetry_section(pyproject_path: &Path) -> Result<bool, String> {
     let contents = std::fs::read_to_string(pyproject_path)
         .map_err(|e| format!("Error reading file '{}': {}", pyproject_path.display(), e))?;
 
-    let pyproject: crate::types::PyProject = toml::from_str(&contents)
-        .map_err(|e| format!("Error parsing TOML in '{}': {}", pyproject_path.display(), e))?;
+    let pyproject: crate::types::PyProject = toml::from_str(&contents).map_err(|e| {
+        format!(
+            "Error parsing TOML in '{}': {}",
+            pyproject_path.display(),
+            e
+        )
+    })?;
 
     Ok(pyproject.tool.and_then(|t| t.poetry).is_some())
 }
@@ -40,7 +45,14 @@ fn find_requirements_files(dir: &Path) -> Vec<std::path::PathBuf> {
         .filter_map(|entry| {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.is_file() && path.file_name().unwrap().to_str().unwrap().starts_with("requirements") {
+            if path.is_file()
+                && path
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .starts_with("requirements")
+            {
                 Some(path)
             } else {
                 None

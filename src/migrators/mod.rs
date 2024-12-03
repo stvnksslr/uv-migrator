@@ -1,10 +1,10 @@
+use crate::utils::{
+    create_virtual_environment, parse_pip_conf, update_pyproject_toml, FileTrackerGuard,
+};
 use log::info;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use crate::utils::{
-    create_virtual_environment, parse_pip_conf, update_pyproject_toml, FileTrackerGuard,
-};
 
 mod dependency;
 mod detect;

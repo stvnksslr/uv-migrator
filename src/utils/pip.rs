@@ -2,15 +2,15 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 pub fn parse_pip_conf() -> Result<Vec<String>, String> {
-    let home_dir = dirs::home_dir().ok_or_else(|| "Unable to determine home directory".to_string())?;
+    let home_dir =
+        dirs::home_dir().ok_or_else(|| "Unable to determine home directory".to_string())?;
     let pip_conf_path = home_dir.join(".pip").join("pip.conf");
 
     if !pip_conf_path.exists() {
         return Ok(vec![]);
     }
 
-    let file = File::open(&pip_conf_path)
-        .map_err(|e| format!("Failed to open pip.conf: {}", e))?;
+    let file = File::open(&pip_conf_path).map_err(|e| format!("Failed to open pip.conf: {}", e))?;
     let reader = BufReader::new(file);
 
     let mut extra_urls = vec![];
