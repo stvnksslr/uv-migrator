@@ -1,4 +1,4 @@
-use log::{info};
+use log::info;
 use self_update::cargo_crate_version;
 
 pub fn update() -> Result<(), String> {
