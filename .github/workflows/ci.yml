@@ -15,7 +15,7 @@ env:
 
 jobs:
   test:
-    name: cargo test
+    name: test
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
     - run: cargo test
 
   format:
-    name: cargo test
+    name: format
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
     - run: cargo fmt --check
 
   lint:
-    name: cargo test
+    name: lint
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
