@@ -4,6 +4,8 @@ use tempfile::TempDir;
 use uv_migrator::migrators::requirements::RequirementsMigrationSource;
 use uv_migrator::migrators::{DependencyType, MigrationSource};
 
+use uv_migrator::migrators::{self};
+
 /// Helper function to create a temporary test project with requirements files.
 ///
 /// # Arguments
@@ -358,5 +360,144 @@ sqlalchemy
     for dep in dependencies {
         assert!(dep.version.is_none());
         assert_eq!(dep.dep_type, DependencyType::Main);
+    }
+}
+
+#[cfg(test)]
+/// Tests for the dependency group merging functionality
+///
+/// This module tests the behavior of merging different dependency groups into the dev group.
+/// It verifies that group dependencies are correctly identified, merged, and that all
+/// dependency metadata is preserved during the merge process.
+mod merge_groups_tests {
+    use super::*;
+
+    /// Helper function to set up test requirements files.
+    ///
+    /// Creates a temporary directory and populates it with requirements files based on
+    /// the provided content. Always creates requirements.txt and optionally creates
+    /// requirements-dev.txt and requirements-test.txt if content is provided.
+    ///
+    /// # Arguments
+    ///
+    /// * `main_content` - Content for the main requirements.txt file
+    /// * `dev_content` - Optional content for requirements-dev.txt
+    /// * `test_content` - Optional content for requirements-test.txt
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// * The temporary directory handle (cleaned up when dropped)
+    /// * Path to the project directory containing the requirements files
+    fn setup_test_files(
+        main_content: &str,
+        dev_content: Option<&str>,
+        test_content: Option<&str>,
+    ) -> (TempDir, std::path::PathBuf) {
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+
+        // Create main requirements.txt
+        std::fs::write(project_dir.join("requirements.txt"), main_content).unwrap();
+
+        // Create requirements-dev.txt if content provided
+        if let Some(content) = dev_content {
+            std::fs::write(project_dir.join("requirements-dev.txt"), content).unwrap();
+        }
+
+        // Create requirements-test.txt if content provided
+        if let Some(content) = test_content {
+            std::fs::write(project_dir.join("requirements-test.txt"), content).unwrap();
+        }
+
+        (temp_dir, project_dir)
+    }
+
+    /// Test merging of dependency groups in requirements files.
+    ///
+    /// This test verifies that:
+    /// 1. Dependencies from different requirements files are correctly identified with their types
+    /// 2. The merge process correctly converts all group dependencies to dev dependencies
+    /// 3. Main dependencies remain unchanged during the merge
+    /// 4. The final merged dependencies contain the expected number of dev dependencies
+    /// 5. No group dependencies remain after the merge operation
+    ///
+    /// # Test Setup
+    /// * Creates a main requirements.txt with two packages
+    /// * Creates a requirements-dev.txt with two packages
+    /// * Creates a requirements-test.txt with two packages
+    ///
+    /// # Verification Steps
+    /// 1. Verifies initial dependency counts by type
+    /// 2. Applies group merging
+    /// 3. Verifies final dependency counts and types
+    /// 4. Ensures no group dependencies remain
+    #[test]
+    fn test_merge_groups_requirements() {
+        let main_content = "flask==2.0.0\nrequests==2.31.0";
+        let dev_content = "pytest==7.0.0\nblack==22.3.0";
+        let test_content = "pytest-cov==4.1.0\npytest-mock==3.10.0";
+
+        let (_temp_dir, project_dir) =
+            setup_test_files(main_content, Some(dev_content), Some(test_content));
+
+        // Extract dependencies normally first
+        let source = RequirementsMigrationSource;
+        let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+        // Verify initial state
+        assert_eq!(
+            dependencies
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Main))
+                .count(),
+            2,
+            "Should have 2 main dependencies"
+        );
+        assert_eq!(
+            dependencies
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Dev))
+                .count(),
+            2,
+            "Should have 2 dev dependencies"
+        );
+        assert_eq!(
+            dependencies
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Group(ref g) if g == "test"))
+                .count(),
+            2,
+            "Should have 2 test group dependencies"
+        );
+
+        // Apply group merging
+        let merged_deps = migrators::merge_dependency_groups(dependencies);
+
+        // Verify merged state
+        assert_eq!(
+            merged_deps
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Main))
+                .count(),
+            2,
+            "Should still have 2 main dependencies after merge"
+        );
+        assert_eq!(
+            merged_deps
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Dev))
+                .count(),
+            4,
+            "Should have 4 dev dependencies after merge (original dev + merged test)"
+        );
+        assert_eq!(
+            merged_deps
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Group(_)))
+                .count(),
+            0,
+            "Should have no group dependencies after merge"
+        );
     }
 }

@@ -154,10 +154,24 @@ impl MigrationTool for UvTool {
     }
 }
 
+pub fn merge_dependency_groups(dependencies: Vec<Dependency>) -> Vec<Dependency> {
+    dependencies
+        .into_iter()
+        .map(|mut dep| {
+            // If it's a group and not already a dev dependency, convert it to dev
+            if matches!(dep.dep_type, DependencyType::Group(_)) {
+                dep.dep_type = DependencyType::Dev;
+            }
+            dep
+        })
+        .collect()
+}
+
 pub fn run_migration(
     project_dir: &Path,
     import_global_pip_conf: bool,
     additional_index_urls: &[String],
+    merge_groups: bool,
 ) -> Result<(), String> {
     let mut file_tracker = FileTrackerGuard::new();
     let hello_py_path = project_dir.join("hello.py");
@@ -180,8 +194,14 @@ pub fn run_migration(
             ProjectType::Requirements => Box::new(requirements::RequirementsMigrationSource),
         };
 
-        let dependencies = migration_source.extract_dependencies(project_dir)?;
+        let mut dependencies = migration_source.extract_dependencies(project_dir)?;
         info!("Extracted {} dependencies", dependencies.len());
+
+        // Apply group merging if requested
+        if merge_groups {
+            dependencies = merge_dependency_groups(dependencies);
+            info!("Merged all dependency groups into dev dependencies");
+        }
 
         // Step 3: Prepare new project
         let migration_tool = UvTool;

@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 use uv_migrator::migrators::poetry::PoetryMigrationSource;
+use uv_migrator::migrators::{self};
 use uv_migrator::migrators::{DependencyType, MigrationSource};
 
 /// Helper function to create a temporary test project with a pyproject.toml file.
@@ -456,5 +457,186 @@ description = "Add your description here"
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod merge_groups_tests {
+    use super::*;
+
+    /// Test the merging of Poetry dependency groups into main and dev categories.
+    ///
+    /// This test verifies that:
+    /// 1. Different dependency groups (main, dev, docs, test) are correctly identified
+    /// 2. All non-main groups are merged into the dev category
+    /// 3. Main dependencies remain unchanged
+    /// 4. Python version requirements are excluded
+    /// 5. The correct number of dependencies are maintained in each category
+    #[test]
+    fn test_merge_groups_poetry() {
+        let content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.111.0"
+aiofiles = "24.1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.2"
+black = "^22.3.0"
+
+[tool.poetry.group.docs.dependencies]
+mkdocs = "^1.5.0"
+mkdocs-material = "^9.4.0"
+
+[tool.poetry.group.test.dependencies]
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.10.0"
+"#;
+
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+        let pyproject_path = project_dir.join("pyproject.toml");
+        std::fs::write(&pyproject_path, content).unwrap();
+
+        // Extract dependencies normally first
+        let source = PoetryMigrationSource;
+        let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+        // Verify initial state
+        assert_eq!(
+            dependencies
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Main))
+                .count(),
+            2,
+            "Should have 2 main dependencies (excluding python)"
+        );
+        assert_eq!(
+            dependencies
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Dev))
+                .count(),
+            2,
+            "Should have 2 dev dependencies"
+        );
+        assert_eq!(
+            dependencies
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Group(ref g) if g == "docs"))
+                .count(),
+            2,
+            "Should have 2 docs group dependencies"
+        );
+        assert_eq!(
+            dependencies
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Group(ref g) if g == "test"))
+                .count(),
+            2,
+            "Should have 2 test group dependencies"
+        );
+
+        // Apply group merging
+        let merged_deps = migrators::merge_dependency_groups(dependencies);
+
+        // Verify merged state
+        assert_eq!(
+            merged_deps
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Main))
+                .count(),
+            2,
+            "Should still have 2 main dependencies after merge"
+        );
+        assert_eq!(
+            merged_deps
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Dev))
+                .count(),
+            6,
+            "Should have 6 dev dependencies after merge (original dev + docs + test)"
+        );
+        assert_eq!(
+            merged_deps
+                .iter()
+                .filter(|d| matches!(d.dep_type, DependencyType::Group(_)))
+                .count(),
+            0,
+            "Should have no group dependencies after merge"
+        );
+    }
+
+    /// Test merging of Poetry dependency groups with complex version specifications.
+    ///
+    /// This test verifies that:
+    /// 1. Complex version constraints are preserved through the merging process
+    /// 2. Dependencies with extras and pre-release flags are handled correctly
+    /// 3. Version ranges and multiple constraints remain intact
+    /// 4. Dependencies are properly categorized after merging
+    /// 5. All groups are correctly merged into main or dev categories
+    #[test]
+    fn test_merge_groups_poetry_with_complex_dependencies() {
+        let content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+requests = {version = "^2.31.0", extras = ["security"]}
+django = ">=4.0.0,<5.0.0"
+
+[tool.poetry.group.dev.dependencies]
+black = {version = "^22.3.0", allow-prereleases = true}
+pylint = "^3.0.0"
+
+[tool.poetry.group.test.dependencies]
+pytest = {version = "^8.0.0", extras = ["testing"]}
+pytest-django = ">=4.5.0"
+"#;
+
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+        let pyproject_path = project_dir.join("pyproject.toml");
+        std::fs::write(&pyproject_path, content).unwrap();
+
+        // Extract and verify dependencies maintain their complex specifications through the merge
+        let source = PoetryMigrationSource;
+        let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+        // Verify initial complex dependencies
+        let requests_dep = dependencies
+            .iter()
+            .find(|d| d.name == "requests")
+            .expect("Should have requests dependency");
+        assert_eq!(requests_dep.version, Some("^2.31.0".to_string()));
+
+        let django_dep = dependencies
+            .iter()
+            .find(|d| d.name == "django")
+            .expect("Should have django dependency");
+        assert_eq!(django_dep.version, Some(">=4.0.0,<5.0.0".to_string()));
+
+        // Apply merge and verify complex dependencies are preserved
+        let merged_deps = migrators::merge_dependency_groups(dependencies);
+
+        // Verify versions are maintained after merge
+        let pytest_dep = merged_deps
+            .iter()
+            .find(|d| d.name == "pytest")
+            .expect("Should have pytest dependency");
+        assert_eq!(pytest_dep.version, Some("^8.0.0".to_string()));
+        assert!(matches!(pytest_dep.dep_type, DependencyType::Dev));
+
+        let pytest_django_dep = merged_deps
+            .iter()
+            .find(|d| d.name == "pytest-django")
+            .expect("Should have pytest-django dependency");
+        assert_eq!(pytest_django_dep.version, Some(">=4.5.0".to_string()));
+        assert!(matches!(pytest_django_dep.dep_type, DependencyType::Dev));
     }
 }

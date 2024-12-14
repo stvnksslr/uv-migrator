@@ -74,6 +74,17 @@ fn run() -> Result<(), String> {
                 .action(clap::ArgAction::Append)
                 .value_parser(clap::value_parser!(String))
         )
+        .arg(
+            Arg::new("merge-groups")
+                .long("merge-groups")
+                .help("Merge all dependency groups into the dev group")
+                .long_help(
+                    "When this flag is set, all dependency groups (including custom groups) \
+                    will be merged into the dev group. This is useful when you want to \
+                    simplify your dependency management by having only main and dev dependencies."
+                )
+                .action(clap::ArgAction::SetTrue)
+        )
         .after_help(
             "EXAMPLES:\n\
             # Migrate a project in the current directory\n\
@@ -87,6 +98,9 @@ fn run() -> Result<(), String> {
             \n\
             # Migrate using global pip configuration\n\
             uv-migrator . --import-global-pip-conf\n\
+            \n\
+            # Merge all dependency groups into dev dependencies\n\
+            uv-migrator . --merge-groups\n\
             \n\
             For more information and documentation, visit:\n\
             https://github.com/stvnksslr/uv-migrator"
@@ -114,12 +128,18 @@ fn run() -> Result<(), String> {
     };
 
     let import_global_pip_conf = matches.get_flag("import-global-pip-conf");
+    let merge_groups = matches.get_flag("merge-groups");
     let additional_index_urls: Vec<String> = matches
         .get_many::<String>("import-index")
         .map(|values| values.cloned().collect())
         .unwrap_or_default();
 
-    match migrators::run_migration(&project_dir, import_global_pip_conf, &additional_index_urls) {
+    match migrators::run_migration(
+        &project_dir,
+        import_global_pip_conf,
+        &additional_index_urls,
+        merge_groups,
+    ) {
         Ok(_) => {
             info!("Migration completed successfully");
             Ok(())
