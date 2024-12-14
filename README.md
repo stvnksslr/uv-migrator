@@ -39,21 +39,6 @@ cargo install uv-migrator
 
 ## Usage
 
-Run the UV Migrator with the path to your existing project directory:
-
-```sh
-uv-migrator path/to/your/project
-```
-
-or
-
-```sh
-cd /to/project
-uv-migrator .
-```
-
-### Additional Options
-
 ```sh
 Usage: uv-migrator [OPTIONS] [PATH]
 
