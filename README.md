@@ -10,7 +10,7 @@ UV Migrator is simple cli tool designed to seamlessly transition Python projects
 
 ## Installation
 
-easy install script, source located at [install.sh](https://github.com/stvnksslr/uv-migrator/blob/main/Cargo.toml)
+easy install script, source located at [install.sh](https://github.com/stvnksslr/uv-migrator/blob/main/install.sh)
 
 ```sh
 curl https://uv-migrator.stvnksslr.com/install.sh | bash
