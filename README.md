@@ -1,40 +1,16 @@
 # UV Migrator
 
-UV Migrator is a Rust-based tool designed to facilitate the migration of Python projects from various dependency
-management systems (like pip or poetry) to the UV package manager. This tool automates the process of creating a new
-UV-based project structure while preserving existing dependencies.
-
 ## Disclaimer
 
-This project is not associated with astral or the uv project in anyway, please use at your own risk and keep backups of
-your dependency declarations for reference
+This project is not associated with astral or the uv project in anyway
 
-## Features
+## What is it?
 
-- Supports migration from Poetry and PEP 621 project structures
-- Creates a new virtual environment using UV
-- Automatically transfers dependencies from the existing `pyproject.toml` or `requirements.txt` to the new UV-based
-  project
-- Attempts to migrate all [tool.*] configs to the new `pyproject.toml` file
-- By default, if using dependency groups in poetry or `requirements-some_group_name.txt` with req files they will be
-  translated into uv dependency groups otherwise they will use the main and --dev conventions
-- Handles both main and development dependencies
-- Provides detailed logging for transparency and debugging
-- Supports importing extra index URLs from global pip configuration
-- Allows specifying additional index URLs during migration
-- By default, doesn't pin the python version via a .python-versions file in case the user uses asdf/mise and
-  .tool-versions files
-
-## Prerequisites
-
-Before you begin, ensure you have the following installed:
-
-- Rust (latest stable version)
-- UV package manager
+UV Migrator is simple cli tool designed to seamlessly transition Python projects from various dependency management systems to the UV package manager. It handles the complexities of migration while preserving your project's dependencies and any existing configs.
 
 ## Installation
 
-Install to .local/bin
+easy install script, source located at [install.sh](https://github.com/stvnksslr/uv-migrator/blob/main/Cargo.toml)
 
 ```sh
 curl https://uv-migrator.stvnksslr.com/install.sh | bash
@@ -46,19 +22,20 @@ Install via Cargo
 cargo install uv-migrator
 ```
 
-The compiled binary will be available in the `target/release` directory.
+## Currently Supported
 
-## Supported Package Managers
+✅ Poetry projects  
+✅ Pip based projects  
+✅ Multiple requirements files  
+✅ Auto Detect Development dependencies  
+✅ Dependency groups  
+✅ Custom package indexes  
 
-- poetry
-- pip (requirements.txt)
+## Coming Soon
 
-## In Progress
-
-- pdm
-- hatch
-- pipenv
-- Open Issues for more!
+🔄 PDM support  
+🔄 Hatch support  
+🔄 Pipenv support  
 
 ## Usage
 
@@ -71,32 +48,32 @@ uv-migrator path/to/your/project
 or
 
 ```sh
-1. cd /to/project
-2. uv-migrator .
+cd /to/project
+uv-migrator .
 ```
 
 ### Additional Options
 
-- `--import-global-pip-conf`: Import extra index URLs from `~/.pip/pip.conf`
+```sh
+Usage: uv-migrator [OPTIONS] [PATH]
 
-  ```bash
-  uv-migrator path/to/your/project --import-global-pip-conf
-  ```
+Arguments:
+  [PATH]
+          Specifies the directory containing the Python project to migrate. This should be the root directory of your project where pyproject.toml or requirements.txt is located.
 
-- `--import-index`: Specify additional index URLs to import (can be used multiple times)
+Options:
+  --self-update
+      Checks for and downloads the latest version of uv-migrator from GitHub releases. The tool will automatically update itself if a newer version is available.
 
-  ```bash
-  uv-migrator path/to/your/project --import-index https://custom.pypi.org/simple/
-  ```
+  --import-global-pip-conf
+      Reads and imports any extra package index URLs defined in your global pip configuration file (~/.pip/pip.conf). This is useful when your project requires packages from private or alternative Python package indexes.
 
-- `--help`: Display comprehensive help information
+  --import-index <import-index>
+      Specifies additional Python package index URLs to use. You can provide this option multiple times to add several index URLs. These URLs will be added to your project's pyproject.toml in the [tool.uv] section.
 
-  ```bash
-  uv-migrator --help
-  ```
+  -h, --help
+          Print help (see a summary with '-h')
 
-- `--self-update`: Update UV Migrator to the latest version
-
-  ```bash
-  uv-migrator --self-update
-  ```
+  -V, --version
+          Print version
+```
