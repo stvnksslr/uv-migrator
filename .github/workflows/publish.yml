@@ -5,12 +5,13 @@ on:
     types: [ published ]
 
 permissions:
-  pull-requests: write
-  contents: write
+  contents: read
 
 jobs:
   build:
     name: Build - ${{ matrix.target }}
+    permissions:
+      contents: write  # Only needed for release artifact uploads
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -38,6 +39,8 @@ jobs:
     steps:
       - name: Checkout Git repo
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set Perl environment variables
         if: runner.os == 'Windows'
@@ -46,7 +49,7 @@ jobs:
           echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Install rust toolchain
-        if: ${{ !contains(matrix.platform.target, 'apple') }}
+        if: ${{ !contains(matrix.target, 'apple') }}
         uses: dtolnay/rust-toolchain@stable
 
       - uses: taiki-e/setup-cross-toolchain-action@v1
