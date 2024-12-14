@@ -39,7 +39,6 @@ impl MigrationSource for PoetryMigrationSource {
                 if let Some(groups) = &poetry.group {
                     for (group_name, group) in groups {
                         // Determine dependency type based on group name
-                        // Only "dev" group should be converted to DependencyType::Dev
                         let dep_type = match group_name.as_str() {
                             "dev" => DependencyType::Dev,
                             _ => DependencyType::Group(group_name.clone()),

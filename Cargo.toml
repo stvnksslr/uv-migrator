@@ -23,3 +23,8 @@ semver = "1.0"
 
 [dev-dependencies]
 tempfile = "3.14.0"
+
+
+[profile.release]
+lto = "fat"
+codegen-units = 1

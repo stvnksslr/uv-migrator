@@ -58,22 +58,29 @@ uv-migrator .
 Usage: uv-migrator [OPTIONS] [PATH]
 
 Arguments:
-  [PATH]
-          Specifies the directory containing the Python project to migrate. This should be the root directory of your project where pyproject.toml or requirements.txt is located.
+  [PATH]  The path to the project directory to migrate
 
 Options:
-  --self-update
-      Checks for and downloads the latest version of uv-migrator from GitHub releases. The tool will automatically update itself if a newer version is available.
+      --self-update                  Update uv-migrator to the latest version
+      --import-global-pip-conf       Import extra index URLs from ~/.pip/pip.conf
+      --import-index <import-index>  Additional index URL to import
+      --merge-groups                 Merge all dependency groups into the dev group
+  -h, --help                         Print help (see more with '--help')
+  -V, --version                      Print version
 
-  --import-global-pip-conf
-      Reads and imports any extra package index URLs defined in your global pip configuration file (~/.pip/pip.conf). This is useful when your project requires packages from private or alternative Python package indexes.
+EXAMPLES:
+# Migrate a project in the current directory
+uv-migrator .
 
-  --import-index <import-index>
-      Specifies additional Python package index URLs to use. You can provide this option multiple times to add several index URLs. These URLs will be added to your project's pyproject.toml in the [tool.uv] section.
+# Migrate a project with a private package index
+uv-migrator . --import-index https://private.pypi.org/simple/
 
-  -h, --help
-          Print help (see a summary with '-h')
+# Update uv-migrator to the latest version
+uv-migrator --self-update
 
-  -V, --version
-          Print version
+# Migrate using global pip configuration
+uv-migrator . --import-global-pip-conf
+
+# Merge all dependency groups into dev dependencies
+uv-migrator . --merge-groups
 ```
