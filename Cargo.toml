@@ -1,6 +1,6 @@
 [package]
 name = "uv-migrator"
-version = "2025.0.0"
+version = "2024.8.2"
 edition = "2021"
 authors = ["stvnksslr@gmail.com"]
 description = "Tool for converting various python package soltutions to use the uv solution by astral"
@@ -24,7 +24,7 @@ semver = "1.0"
 [dev-dependencies]
 tempfile = "3.14.0"
 
-
 [profile.release]
-lto = "fat"
+lto = true
+strip = true
 codegen-units = 1
