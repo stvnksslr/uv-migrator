@@ -12,7 +12,7 @@ jobs:
   release:
     name: Release
     permissions:
-      contents: write    # Only needed for creating releases
+      contents: write    # For creating releases
       id-token: write   # Required for release-plz
     runs-on: ubuntu-latest
     concurrency:
@@ -22,9 +22,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          persist-credentials: true # Change to true to maintain credentials
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global url."https://${{ secrets.RELEASE_PLZ_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
