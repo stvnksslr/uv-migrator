@@ -7,14 +7,10 @@ set -euo pipefail
     exit 1
 }
 
-# Add to PATH if not already present (checks common shell rc files)
+# Check if directory is in PATH
 [[ ":$PATH:" != *":$HOME/.local/bin:"* ]] && {
-    for rc in .zshrc .bashrc .profile; do
-        [[ -f "$HOME/$rc" ]] && {
-            echo 'export PATH="$HOME/.local/bin:$PATH"' >>"$HOME/$rc"
-            break
-        }
-    done
+    echo "Error: ${HOME}/.local/bin is not in PATH" >&2
+    exit 1
 }
 
 # Detect system architecture and OS combination
