@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.1.0](https://github.com/stvnksslr/uv-migrator/compare/v2025.0.0...v2025.1.0) - 2024-12-15
+
+### Added
+- *(install.sh)* simplified install script further so that its only concerned with if the chose folder exists, and if its in path. it will not create or modify the users path in anyway (by @stvnksslr)
+
+### Other
+- *(readme, --help)* reordering options to make more sense for common usage (by @stvnksslr)
+- *(readme)* condensing readme (by @stvnksslr)
+- chore(fix version): (by @stvnksslr)
+- chore(deps + build opts): (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2025.0.0](https://github.com/stvnksslr/uv-migrator/compare/v2024.8.2...v2025.0.0) - 2024-12-14
 
 ### Added
