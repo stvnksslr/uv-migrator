@@ -46,10 +46,10 @@ Arguments:
   [PATH]  The path to the project directory to migrate
 
 Options:
-      --self-update                  Update uv-migrator to the latest version
+      --merge-groups                 Merge all dependency groups into the dev group
       --import-global-pip-conf       Import extra index URLs from ~/.pip/pip.conf
       --import-index <import-index>  Additional index URL to import
-      --merge-groups                 Merge all dependency groups into the dev group
+      --self-update                  Update uv-migrator to the latest version
   -h, --help                         Print help (see more with '--help')
   -V, --version                      Print version
 
@@ -57,15 +57,18 @@ EXAMPLES:
 # Migrate a project in the current directory
 uv-migrator .
 
+# Merge all dependency groups into dev dependencies
+uv-migrator . --merge-groups
+
 # Migrate a project with a private package index
 uv-migrator . --import-index https://private.pypi.org/simple/
-
-# Update uv-migrator to the latest version
-uv-migrator --self-update
 
 # Migrate using global pip configuration
 uv-migrator . --import-global-pip-conf
 
-# Merge all dependency groups into dev dependencies
-uv-migrator . --merge-groups
+# Update uv-migrator to the latest version
+uv-migrator --self-update
+
+For more information and documentation, visit:
+https://github.com/stvnksslr/uv-migrator
 ```
