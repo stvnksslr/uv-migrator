@@ -42,12 +42,13 @@ fn run() -> Result<(), String> {
                 .value_parser(clap::value_parser!(String))
         )
         .arg(
-            Arg::new("self-update")
-                .long("self-update")
-                .help("Update uv-migrator to the latest version")
+            Arg::new("merge-groups")
+                .long("merge-groups")
+                .help("Merge all dependency groups into the dev group")
                 .long_help(
-                    "Checks for and downloads the latest version of uv-migrator from GitHub releases. \
-                    The tool will automatically update itself if a newer version is available."
+                    "When this flag is set, all dependency groups (including custom groups) \
+                    will be merged into the dev group. This is useful when you want to \
+                    simplify your dependency management by having only main and dev dependencies."
                 )
                 .action(clap::ArgAction::SetTrue)
         )
@@ -75,13 +76,12 @@ fn run() -> Result<(), String> {
                 .value_parser(clap::value_parser!(String))
         )
         .arg(
-            Arg::new("merge-groups")
-                .long("merge-groups")
-                .help("Merge all dependency groups into the dev group")
+            Arg::new("self-update")
+                .long("self-update")
+                .help("Update uv-migrator to the latest version")
                 .long_help(
-                    "When this flag is set, all dependency groups (including custom groups) \
-                    will be merged into the dev group. This is useful when you want to \
-                    simplify your dependency management by having only main and dev dependencies."
+                    "Checks for and downloads the latest version of uv-migrator from GitHub releases. \
+                    The tool will automatically update itself if a newer version is available."
                 )
                 .action(clap::ArgAction::SetTrue)
         )
@@ -90,17 +90,17 @@ fn run() -> Result<(), String> {
             # Migrate a project in the current directory\n\
             uv-migrator .\n\
             \n\
+            # Merge all dependency groups into dev dependencies\n\
+            uv-migrator . --merge-groups\n\
+            \n\
             # Migrate a project with a private package index\n\
             uv-migrator . --import-index https://private.pypi.org/simple/\n\
-            \n\
-            # Update uv-migrator to the latest version\n\
-            uv-migrator --self-update\n\
             \n\
             # Migrate using global pip configuration\n\
             uv-migrator . --import-global-pip-conf\n\
             \n\
-            # Merge all dependency groups into dev dependencies\n\
-            uv-migrator . --merge-groups\n\
+            # Update uv-migrator to the latest version\n\
+            uv-migrator --self-update\n\
             \n\
             For more information and documentation, visit:\n\
             https://github.com/stvnksslr/uv-migrator"
