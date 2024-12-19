@@ -1,18 +1,27 @@
 use log::info;
 use std::path::Path;
 
+use crate::migrators::poetry::PoetryMigrationSource;
+
 #[derive(Debug, PartialEq)]
 pub enum ProjectType {
-    Poetry,
+    Poetry(PoetryProjectType),
     Requirements,
-    SetupPy, // New variant for setup.py projects
+    SetupPy,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum PoetryProjectType {
+    Package,
+    Application,
 }
 
 pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType, String> {
     let pyproject_path = project_dir.join("pyproject.toml");
     if pyproject_path.exists() && has_poetry_section(&pyproject_path)? {
         info!("Detected Poetry project");
-        return Ok(ProjectType::Poetry);
+        let poetry_type = PoetryMigrationSource::detect_project_type(project_dir)?;
+        return Ok(ProjectType::Poetry(poetry_type));
     }
     let setup_py_path = project_dir.join("setup.py");
     if setup_py_path.exists() {

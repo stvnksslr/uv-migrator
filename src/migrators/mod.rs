@@ -1,3 +1,4 @@
+use crate::migrators::detect::{PoetryProjectType, ProjectType};
 use crate::utils::{
     create_virtual_environment, parse_pip_conf, update_pyproject_toml, FileTrackerGuard,
 };
@@ -14,7 +15,7 @@ pub mod requirements;
 pub mod setup_py;
 
 pub use dependency::{Dependency, DependencyType};
-pub use detect::{detect_project_type, ProjectType};
+pub use detect::detect_project_type;
 
 pub trait MigrationSource {
     fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>, String>;
@@ -54,7 +55,11 @@ impl MigrationTool for UvTool {
         }
         file_tracker.track_file(&pyproject_path)?;
 
-        let is_package = matches!(project_type, ProjectType::SetupPy);
+        let is_package = matches!(
+            project_type,
+            ProjectType::Poetry(PoetryProjectType::Package) | ProjectType::SetupPy
+        );
+
         info!(
             "Initializing new project with uv init{}",
             if is_package { " --package" } else { "" }
@@ -196,7 +201,7 @@ pub fn run_migration(
         info!("Detected project type: {:?}", project_type);
 
         let migration_source: Box<dyn MigrationSource> = match project_type {
-            ProjectType::Poetry => Box::new(poetry::PoetryMigrationSource),
+            ProjectType::Poetry(_) => Box::new(poetry::PoetryMigrationSource),
             ProjectType::Requirements => Box::new(requirements::RequirementsMigrationSource),
             ProjectType::SetupPy => Box::new(setup_py::SetupPyMigrationSource),
         };

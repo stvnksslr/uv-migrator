@@ -15,6 +15,12 @@ pub struct Tool {
 pub struct Poetry {
     pub dependencies: Option<HashMap<String, toml::Value>>,
     pub group: Option<HashMap<String, Group>>,
+    pub packages: Option<Vec<Package>>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Package {
+    pub include: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
