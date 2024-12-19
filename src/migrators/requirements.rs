@@ -27,9 +27,8 @@ impl MigrationSource for RequirementsMigrationSource {
 }
 
 impl RequirementsMigrationSource {
-    fn find_requirements_files(&self, dir: &Path) -> Vec<(PathBuf, DependencyType)> {
+    pub(crate) fn find_requirements_files(&self, dir: &Path) -> Vec<(PathBuf, DependencyType)> {
         let mut requirements_files = Vec::new();
-
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.filter_map(Result::ok) {
                 let path = entry.path();
@@ -46,12 +45,10 @@ impl RequirementsMigrationSource {
                                 .unwrap()
                                 .strip_suffix(".txt")
                                 .unwrap();
-
                             let dep_type = match group_name {
                                 "dev" => DependencyType::Dev,
                                 _ => DependencyType::Group(group_name.to_string()),
                             };
-
                             requirements_files.push((path.clone(), dep_type));
                             info!("Found {} requirements file: {}", group_name, path.display());
                         }
@@ -59,8 +56,11 @@ impl RequirementsMigrationSource {
                 }
             }
         }
-
         requirements_files
+    }
+
+    pub fn has_requirements_files(&self, dir: &Path) -> bool {
+        !self.find_requirements_files(dir).is_empty()
     }
 
     fn process_requirements_file(

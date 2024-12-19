@@ -1,0 +1,135 @@
+use super::requirements::RequirementsMigrationSource;
+use super::{Dependency, DependencyType, MigrationSource};
+use log::{debug, info};
+use std::fs;
+use std::path::Path;
+
+pub struct SetupPyMigrationSource;
+
+impl MigrationSource for SetupPyMigrationSource {
+    fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>, String> {
+        info!("Extracting dependencies from setup.py");
+        let requirements_source = RequirementsMigrationSource;
+        if requirements_source.has_requirements_files(project_dir) {
+            info!("Found requirements files, using requirements parser");
+            return requirements_source.extract_dependencies(project_dir);
+        }
+
+        info!("No requirements files found, parsing setup.py directly");
+        self.parse_setup_py(project_dir)
+    }
+}
+
+impl SetupPyMigrationSource {
+    fn parse_setup_py(&self, project_dir: &Path) -> Result<Vec<Dependency>, String> {
+        let setup_py_path = project_dir.join("setup.py");
+        let content = fs::read_to_string(&setup_py_path)
+            .map_err(|e| format!("Failed to read setup.py: {}", e))?;
+
+        debug!("Parsing setup.py content");
+        let mut dependencies = Vec::new();
+
+        // Extract main dependencies
+        if let Some(mut deps) = self.extract_install_requires(&content) {
+            dependencies.append(&mut deps);
+        }
+
+        // Extract test dependencies
+        if let Some(mut deps) = self.extract_tests_require(&content) {
+            dependencies.append(&mut deps);
+        }
+
+        Ok(dependencies)
+    }
+
+    fn extract_install_requires(&self, content: &str) -> Option<Vec<Dependency>> {
+        let start_idx = content.find("install_requires=[")?;
+        let bracket_content =
+            self.extract_bracket_content(content, start_idx + "install_requires=".len())?;
+
+        Some(self.parse_dependencies(&bracket_content, DependencyType::Main))
+    }
+
+    fn extract_tests_require(&self, content: &str) -> Option<Vec<Dependency>> {
+        let start_idx = content.find("tests_require=[")?;
+        let bracket_content =
+            self.extract_bracket_content(content, start_idx + "tests_require=".len())?;
+
+        Some(self.parse_dependencies(&bracket_content, DependencyType::Dev))
+    }
+
+    fn extract_bracket_content(&self, content: &str, start_pos: usize) -> Option<String> {
+        let content = &content[start_pos..];
+        let bracket_start = content.find('[')?;
+        let mut bracket_count = 1;
+        let mut pos = bracket_start + 1;
+
+        while bracket_count > 0 && pos < content.len() {
+            match content.chars().nth(pos)? {
+                '[' => bracket_count += 1,
+                ']' => bracket_count -= 1,
+                _ => {}
+            }
+            pos += 1;
+        }
+
+        if bracket_count == 0 {
+            Some(content[bracket_start + 1..pos - 1].to_string())
+        } else {
+            None
+        }
+    }
+
+    fn parse_dependencies(&self, content: &str, dep_type: DependencyType) -> Vec<Dependency> {
+        let mut dependencies = Vec::new();
+
+        for line in content.split(',') {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            // Remove quotes and extract package name and version
+            let dep_str = line.trim_matches(|c| c == '\'' || c == '"');
+            if let Some((name, version)) = self.parse_dependency_spec(dep_str) {
+                dependencies.push(Dependency {
+                    name,
+                    version,
+                    dep_type: dep_type.clone(),
+                    environment_markers: None,
+                });
+            }
+        }
+
+        dependencies
+    }
+
+    fn parse_dependency_spec(&self, dep_str: &str) -> Option<(String, Option<String>)> {
+        if dep_str.is_empty() || dep_str == "setuptools" {
+            return None;
+        }
+
+        // Handle different package specification formats
+        if dep_str.contains(">=") {
+            let parts: Vec<&str> = dep_str.split(">=").collect();
+            Some((
+                parts[0].trim().to_string(),
+                Some(format!(">={}", parts[1].trim())),
+            ))
+        } else if dep_str.contains("==") {
+            let parts: Vec<&str> = dep_str.split("==").collect();
+            Some((
+                parts[0].trim().to_string(),
+                Some(parts[1].trim().to_string()),
+            ))
+        } else if dep_str.contains('>') {
+            let parts: Vec<&str> = dep_str.split('>').collect();
+            Some((
+                parts[0].trim().to_string(),
+                Some(format!(">{}", parts[1].trim())),
+            ))
+        } else {
+            Some((dep_str.trim().to_string(), None))
+        }
+    }
+}
