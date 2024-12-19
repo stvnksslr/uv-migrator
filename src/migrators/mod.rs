@@ -11,6 +11,7 @@ mod detect;
 pub mod poetry;
 mod pyproject;
 pub mod requirements;
+pub mod setup_py;
 
 pub use dependency::{Dependency, DependencyType};
 pub use detect::{detect_project_type, ProjectType};
@@ -24,6 +25,7 @@ pub trait MigrationTool {
         &self,
         project_dir: &Path,
         file_tracker: &mut FileTrackerGuard,
+        project_type: ProjectType,
     ) -> Result<(), String>;
 
     fn add_dependencies(
@@ -40,27 +42,36 @@ impl MigrationTool for UvTool {
         &self,
         project_dir: &Path,
         file_tracker: &mut FileTrackerGuard,
+        project_type: ProjectType,
     ) -> Result<(), String> {
         let pyproject_path = project_dir.join("pyproject.toml");
         let backup_path = project_dir.join("old.pyproject.toml");
-
         if pyproject_path.exists() {
             file_tracker.track_rename(&pyproject_path, &backup_path)?;
             fs::rename(&pyproject_path, &backup_path)
                 .map_err(|e| format!("Failed to rename existing pyproject.toml: {}", e))?;
             info!("Renamed existing pyproject.toml to old.pyproject.toml");
         }
-
         file_tracker.track_file(&pyproject_path)?;
-        info!("Initializing new project with uv init");
+
+        let is_package = matches!(project_type, ProjectType::SetupPy);
+        info!(
+            "Initializing new project with uv init{}",
+            if is_package { " --package" } else { "" }
+        );
 
         let uv_path =
             which::which("uv").map_err(|e| format!("Failed to find uv command: {}", e))?;
 
-        let output = std::process::Command::new(&uv_path)
-            .arg("init")
-            .arg("--no-pin-python")
-            .current_dir(project_dir)
+        let mut command = std::process::Command::new(&uv_path);
+        command.arg("init");
+        command.arg("--no-pin-python");
+        if is_package {
+            command.arg("--package");
+        }
+        command.current_dir(project_dir);
+
+        let output = command
             .output()
             .map_err(|e| format!("Failed to execute uv init: {}", e))?;
 
@@ -127,7 +138,6 @@ impl MigrationTool for UvTool {
                 if let Some(markers) = &dep.environment_markers {
                     dep_str.push_str(&format!("; {}", markers));
                 }
-
                 command.arg(dep_str);
             }
 
@@ -158,7 +168,6 @@ pub fn merge_dependency_groups(dependencies: Vec<Dependency>) -> Vec<Dependency>
     dependencies
         .into_iter()
         .map(|mut dep| {
-            // If it's a group and not already a dev dependency, convert it to dev
             if matches!(dep.dep_type, DependencyType::Group(_)) {
                 dep.dep_type = DependencyType::Dev;
             }
@@ -182,55 +191,47 @@ pub fn run_migration(
     }
 
     let result = (|| {
-        // Step 1: Create virtual environment
         create_virtual_environment()?;
-
-        // Step 2: Detect project type and extract dependencies
         let project_type = detect_project_type(project_dir)?;
         info!("Detected project type: {:?}", project_type);
 
         let migration_source: Box<dyn MigrationSource> = match project_type {
             ProjectType::Poetry => Box::new(poetry::PoetryMigrationSource),
             ProjectType::Requirements => Box::new(requirements::RequirementsMigrationSource),
+            ProjectType::SetupPy => Box::new(setup_py::SetupPyMigrationSource),
         };
 
         let mut dependencies = migration_source.extract_dependencies(project_dir)?;
         info!("Extracted {} dependencies", dependencies.len());
 
-        // Apply group merging if requested
         if merge_groups {
             dependencies = merge_dependency_groups(dependencies);
             info!("Merged all dependency groups into dev dependencies");
         }
 
-        // Step 3: Prepare new project
         let migration_tool = UvTool;
-        migration_tool.prepare_project(project_dir, &mut file_tracker)?;
-
-        // Step 4: Update project metadata
+        migration_tool.prepare_project(project_dir, &mut file_tracker, project_type)?;
         info!("Updating project metadata");
+
         file_tracker.track_file(&pyproject_path)?;
         update_pyproject_toml(project_dir, &[])?;
 
-        // Step 5: Handle extra index URLs if any
         let mut extra_urls = Vec::new();
         if import_global_pip_conf {
             extra_urls.extend(parse_pip_conf()?);
         }
         extra_urls.extend(additional_index_urls.iter().cloned());
+
         if !extra_urls.is_empty() {
             file_tracker.track_file(&pyproject_path)?;
             update_pyproject_toml(project_dir, &extra_urls)?;
         }
 
-        // Step 6: Add dependencies
         migration_tool.add_dependencies(project_dir, &dependencies)?;
 
-        // Step 7: Append remaining tool sections
         file_tracker.track_file(&pyproject_path)?;
         pyproject::append_tool_sections(project_dir)?;
 
-        // Clean up
         if hello_py_path.exists() {
             fs::remove_file(&hello_py_path)
                 .map_err(|e| format!("Failed to delete hello.py: {}", e))?;
@@ -245,12 +246,14 @@ pub fn run_migration(
         let migration_error = result.unwrap_err();
         file_tracker.force_rollback();
         drop(file_tracker);
+
         if !pyproject_path.exists() {
             return Err(format!(
                 "{}\nError: Rollback failed - pyproject.toml was not restored.",
                 migration_error
             ));
         }
+
         return Err(format!(
             "{}\nNote: File changes have been rolled back to their original state.",
             migration_error
