@@ -102,7 +102,7 @@ fn run() -> Result<(), String> {
             uv-migrator . --import-index https://private.pypi.org/simple/\n\
             \n\
             # Migrate using global pip configuration\n\
-            uv-migrator . --import-global-pip-conf\n"
+            uv-migrator . --import-global-pip-conf\n",
         );
 
         #[cfg(feature = "self_update")]
@@ -110,14 +110,14 @@ fn run() -> Result<(), String> {
             help.push_str(
                 "\n\
                 # Update uv-migrator to the latest version\n\
-                uv-migrator --self-update\n"
+                uv-migrator --self-update\n",
             );
         }
 
         help.push_str(
             "\n\
             For more information and documentation, visit:\n\
-            https://github.com/stvnksslr/uv-migrator"
+            https://github.com/stvnksslr/uv-migrator",
         );
 
         help

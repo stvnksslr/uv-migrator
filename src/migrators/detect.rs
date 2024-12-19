@@ -5,7 +5,7 @@ use std::path::Path;
 pub enum ProjectType {
     Poetry,
     Requirements,
-    SetupPy,  // New variant for setup.py projects
+    SetupPy, // New variant for setup.py projects
 }
 
 pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType, String> {
