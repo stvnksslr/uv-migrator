@@ -1,6 +1,6 @@
 pub mod file_tracker;
 mod pip;
-mod pyproject;
+pub(crate) mod pyproject;
 #[cfg(feature = "self_update")]
 mod update;
 mod uv;

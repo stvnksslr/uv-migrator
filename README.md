@@ -33,14 +33,15 @@ cargo install uv-migrator
 ✅ Dependency groups  
 ✅ Custom package indexes  
 
+Package Formats
+  ✅ setup.py
+
 ## Coming Soon
 
-🔄 Package formats
+Package formats
   🔄 poetry
-  🔄 setup.py
 
 🔄 PDM support  
-🔄 Hatch support  
 🔄 Pipenv support  
 
 ## Usage

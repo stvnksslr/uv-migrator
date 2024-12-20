@@ -233,3 +233,99 @@ fn parse_toml_value(line: &str, key: &str) -> Option<String> {
         Some(cleaned_value.to_string())
     }
 }
+
+pub fn update_description(project_dir: &Path, description: &str) -> Result<(), String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+
+    debug!("Reading pyproject.toml at {}", pyproject_path.display());
+    let content = fs::read_to_string(&pyproject_path)
+        .map_err(|e| format!("Failed to read pyproject.toml: {}", e))?;
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut in_project_section = false;
+    let mut description_updated = false;
+    let mut current_indent = String::new();
+
+    debug!("Starting to update project description");
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Capture the indentation of the current line
+        if let Some(indent_end) = line.find(|c: char| !c.is_whitespace()) {
+            current_indent = line[..indent_end].to_string();
+        }
+
+        if trimmed == "[project]" {
+            debug!("Found [project] section");
+            in_project_section = true;
+            lines.push(line.to_string());
+            continue;
+        } else if trimmed.starts_with('[') && trimmed != "[project]" {
+            if in_project_section && !description_updated {
+                let desc_line = format!(
+                    "{}description = \"{}\"",
+                    current_indent,
+                    escape_description(description)
+                );
+                debug!("Inserting description at section end: {}", desc_line);
+                lines.push(desc_line);
+                description_updated = true;
+            }
+            in_project_section = false;
+            lines.push(line.to_string());
+            continue;
+        }
+
+        if in_project_section && trimmed.starts_with("description") {
+            if let Some(_equals_pos) = trimmed.find('=') {
+                debug!("Replacing existing description line");
+                lines.push(format!(
+                    "{}description = \"{}\"",
+                    current_indent,
+                    escape_description(description)
+                ));
+                description_updated = true;
+                continue;
+            }
+        }
+
+        lines.push(line.to_string());
+    }
+
+    // Handle case where [project] section is the last section
+    if in_project_section && !description_updated {
+        debug!("Project section was the last section");
+        let desc_line = format!(
+            "{}description = \"{}\"",
+            current_indent,
+            escape_description(description)
+        );
+        debug!("Inserting description at end: {}", desc_line);
+        lines.push(desc_line);
+    }
+
+    debug!("Writing updated content back to pyproject.toml");
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&pyproject_path)
+        .map_err(|e| format!("Failed to open pyproject.toml for writing: {}", e))?;
+
+    for line in lines {
+        writeln!(file, "{}", line)
+            .map_err(|e| format!("Failed to write line to pyproject.toml: {}", e))?;
+    }
+
+    info!("Successfully updated project description from setup.py");
+    Ok(())
+}
+
+/// Escapes special characters in the description string for TOML compatibility
+fn escape_description(description: &str) -> String {
+    description
+        .replace('\\', "\\\\") // Escape backslashes first
+        .replace('\"', "\\\"") // Escape double quotes
+        .replace('\n', "\\n") // Convert newlines to escaped form
+        .replace('\r', "\\r") // Convert carriage returns
+        .replace('\t', "\\t") // Convert tabs
+}

@@ -237,6 +237,15 @@ pub fn run_migration(
         file_tracker.track_file(&pyproject_path)?;
         pyproject::append_tool_sections(project_dir)?;
 
+        // Add setup.py description migration as the last step
+        if let Some(description) =
+            setup_py::SetupPyMigrationSource::extract_description(project_dir)?
+        {
+            info!("Migrating description from setup.py");
+            file_tracker.track_file(&pyproject_path)?;
+            crate::utils::pyproject::update_description(project_dir, &description)?;
+        }
+
         if hello_py_path.exists() {
             fs::remove_file(&hello_py_path)
                 .map_err(|e| format!("Failed to delete hello.py: {}", e))?;
