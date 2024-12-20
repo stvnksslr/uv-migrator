@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 use uv_migrator::migrators::setup_py::SetupPyMigrationSource;
 use uv_migrator::migrators::{DependencyType, MigrationSource};
+use uv_migrator::utils::author::{extract_authors_from_setup_py, update_authors};
 
 fn create_test_project(
     setup_content: &str,
@@ -159,4 +160,153 @@ setup(
         dependencies.is_empty(),
         "Should have no dependencies for malformed setup.py"
     );
+}
+
+/// Helper function to create a temporary test environment with setup.py and pyproject.toml
+fn setup_test_environment(
+    setup_content: &str,
+    pyproject_content: &str,
+) -> (TempDir, PathBuf) {
+    let temp_dir = TempDir::new().unwrap();
+    let project_dir = temp_dir.path().to_path_buf();
+
+    fs::write(project_dir.join("setup.py"), setup_content).unwrap();
+    fs::write(project_dir.join("pyproject.toml"), pyproject_content).unwrap();
+
+    (temp_dir, project_dir)
+}
+
+#[test]
+fn test_extract_authors() {
+    let setup_content = r#"
+from setuptools import setup
+
+setup(
+    name="test-project",
+    version="1.0.0",
+    author="John Riebold",
+    author_email="john.riebold@pitchbook.com",
+    description="Test project"
+)
+"#;
+    let (_temp_dir, project_dir) = setup_test_environment(setup_content, "");
+
+    let authors = extract_authors_from_setup_py(&project_dir).unwrap();
+    assert_eq!(authors.len(), 1);
+    assert_eq!(authors[0].name, "John Riebold");
+    assert_eq!(
+        authors[0].email,
+        Some("john.riebold@pitchbook.com".to_string())
+    );
+}
+
+#[test]
+fn test_update_authors_in_pyproject() {
+    let setup_content = r#"
+from setuptools import setup
+
+setup(
+    name="test-project",
+    version="1.0.0",
+    author="John Riebold",
+    author_email="john.riebold@pitchbook.com",
+    description="Test project"
+)
+"#;
+    let pyproject_content = r#"[project]
+name = "test-project"
+version = "1.0.0"
+description = "Test project"
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_environment(setup_content, pyproject_content);
+
+    update_authors(&project_dir).unwrap();
+
+    let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+    assert!(updated_content.contains(r#"authors = ["#));
+    assert!(updated_content.contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
+}
+
+#[test]
+fn test_update_authors_with_existing_authors() {
+    let setup_content = r#"
+from setuptools import setup
+
+setup(
+    name="test-project",
+    version="1.0.0",
+    author="John Riebold",
+    author_email="john.riebold@pitchbook.com",
+    description="Test project"
+)
+"#;
+    let pyproject_content = r#"[project]
+name = "test-project"
+version = "1.0.0"
+description = "Test project"
+authors = [
+    { name = "Old Author", email = "old@example.com" }
+]
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_environment(setup_content, pyproject_content);
+
+    update_authors(&project_dir).unwrap();
+
+    let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+    assert!(updated_content.contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
+    assert!(!updated_content.contains(r#"{ name = "Old Author", email = "old@example.com" }"#));
+}
+
+#[test]
+fn test_missing_author_email() {
+    let setup_content = r#"
+from setuptools import setup
+
+setup(
+    name="test-project",
+    version="1.0.0",
+    author="John Riebold",
+    description="Test project"
+)
+"#;
+    let pyproject_content = r#"[project]
+name = "test-project"
+version = "1.0.0"
+description = "Test project"
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_environment(setup_content, pyproject_content);
+
+    update_authors(&project_dir).unwrap();
+
+    let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+    assert!(updated_content.contains(r#"{ name = "John Riebold" }"#));
+    assert!(!updated_content.contains("email"));
+}
+
+#[test]
+fn test_no_authors() {
+    let setup_content = r#"
+from setuptools import setup
+
+setup(
+    name="test-project",
+    version="1.0.0",
+    description="Test project"
+)
+"#;
+    let pyproject_content = r#"[project]
+name = "test-project"
+version = "1.0.0"
+description = "Test project"
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_environment(setup_content, pyproject_content);
+
+    update_authors(&project_dir).unwrap();
+
+    let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+    assert!(!updated_content.contains("authors"));
 }

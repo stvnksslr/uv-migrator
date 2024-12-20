@@ -1,6 +1,8 @@
+// src/migrators/mod.rs
+
 use crate::migrators::detect::{PoetryProjectType, ProjectType};
 use crate::utils::{
-    create_virtual_environment, parse_pip_conf, update_pyproject_toml, FileTrackerGuard,
+    create_virtual_environment, parse_pip_conf, update_authors, update_pyproject_toml, FileTrackerGuard,
 };
 use log::info;
 use std::collections::HashMap;
@@ -237,14 +239,17 @@ pub fn run_migration(
         file_tracker.track_file(&pyproject_path)?;
         pyproject::append_tool_sections(project_dir)?;
 
-        // Add setup.py description migration as the last step
-        if let Some(description) =
-            setup_py::SetupPyMigrationSource::extract_description(project_dir)?
-        {
+        // Migrate setup.py metadata
+        if let Some(description) = setup_py::SetupPyMigrationSource::extract_description(project_dir)? {
             info!("Migrating description from setup.py");
             file_tracker.track_file(&pyproject_path)?;
             crate::utils::pyproject::update_description(project_dir, &description)?;
         }
+
+        // Migrate authors from setup.py
+        info!("Migrating authors from setup.py");
+        file_tracker.track_file(&pyproject_path)?;
+        update_authors(project_dir)?;
 
         if hello_py_path.exists() {
             fs::remove_file(&hello_py_path)

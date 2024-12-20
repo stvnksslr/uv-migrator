@@ -1,3 +1,4 @@
+pub mod author;
 pub mod file_tracker;
 mod pip;
 pub(crate) mod pyproject;
@@ -6,6 +7,7 @@ mod update;
 mod uv;
 mod venv;
 
+pub use author::update_authors;
 pub use file_tracker::FileTrackerGuard;
 pub use pip::parse_pip_conf;
 pub use pyproject::update_pyproject_toml;
