@@ -1,27 +1,39 @@
 use log::info;
 use std::path::Path;
 
+use crate::migrators::poetry::PoetryMigrationSource;
+
 #[derive(Debug, PartialEq)]
 pub enum ProjectType {
-    Poetry,
+    Poetry(PoetryProjectType),
     Requirements,
+    SetupPy,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum PoetryProjectType {
+    Package,
+    Application,
 }
 
 pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType, String> {
     let pyproject_path = project_dir.join("pyproject.toml");
-
     if pyproject_path.exists() && has_poetry_section(&pyproject_path)? {
         info!("Detected Poetry project");
-        return Ok(ProjectType::Poetry);
+        let poetry_type = PoetryMigrationSource::detect_project_type(project_dir)?;
+        return Ok(ProjectType::Poetry(poetry_type));
     }
-
+    let setup_py_path = project_dir.join("setup.py");
+    if setup_py_path.exists() {
+        info!("Detected setuptools project");
+        return Ok(ProjectType::SetupPy);
+    }
     let requirements_files = find_requirements_files(project_dir);
     if !requirements_files.is_empty() {
         info!("Detected project with requirements files");
         return Ok(ProjectType::Requirements);
     }
-
-    Err("Unable to detect project type. Ensure you have either a pyproject.toml with a [tool.poetry] section or requirements.txt file(s).".to_string())
+    Err("Unable to detect project type. Ensure you have either a pyproject.toml with a [tool.poetry] section, a setup.py file, or requirements.txt file(s).".to_string())
 }
 
 /// Parses the contents of a TOML file into a `PyProject` struct.
