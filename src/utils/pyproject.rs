@@ -1,331 +1,168 @@
-use log::{debug, info, warn};
-use std::fs;
-use std::io::Write;
+use crate::utils::toml::{read_toml, update_section, write_toml};
+use log::{debug, info};
 use std::path::Path;
+use toml_edit::{Array, Formatted, Item, Table, Value};
 
 pub fn update_pyproject_toml(project_dir: &Path, extra_urls: &[String]) -> Result<(), String> {
     let pyproject_path = project_dir.join("pyproject.toml");
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
 
-    debug!("Starting metadata migration process");
-    debug!(
-        "Looking for old pyproject at: {}",
-        old_pyproject_path.display()
-    );
-
     if !old_pyproject_path.exists() {
-        warn!(
-            "old.pyproject.toml not found at {}",
-            old_pyproject_path.display()
-        );
         return Ok(());
     }
 
-    debug!("Found old.pyproject.toml, reading content");
-    let old_content = fs::read_to_string(&old_pyproject_path)
-        .map_err(|e| format!("Failed to read old.pyproject.toml: {}", e))?;
+    let doc = read_toml(&old_pyproject_path)?;
+    let mut new_doc = read_toml(&pyproject_path)?;
 
-    let mut poetry_version = None;
-    let mut poetry_description = None;
-    let mut in_poetry_section = false;
-
-    debug!("Starting to parse old pyproject.toml");
-    for line in old_content.lines() {
-        let trimmed = line.trim();
-        debug!("Processing line: {}", trimmed);
-
-        if trimmed == "[tool.poetry]" {
-            debug!("Found [tool.poetry] section");
-            in_poetry_section = true;
-            continue;
-        } else if trimmed.starts_with('[') && trimmed != "[tool.poetry]" {
-            if in_poetry_section {
-                debug!("Leaving poetry section");
+    if let Some(tool) = doc.get("tool") {
+        if let Some(poetry) = tool.get("poetry") {
+            if let Some(version) = poetry.get("version") {
+                update_section(&mut new_doc, &["project", "version"], version.clone());
             }
-            in_poetry_section = false;
-            continue;
-        }
 
-        if !in_poetry_section {
-            continue;
-        }
-
-        // Enhanced parsing of version and description
-        if let Some(version) = parse_toml_value(trimmed, "version") {
-            poetry_version = Some(version.clone());
-            debug!("Found version in old file: {}", version);
-        } else if let Some(description) = parse_toml_value(trimmed, "description") {
-            poetry_description = Some(description.clone());
-            debug!("Found description in old file: {}", description);
-        }
-    }
-
-    debug!("Finished parsing old pyproject.toml");
-    debug!("Found version: {:?}", poetry_version);
-    debug!("Found description: {:?}", poetry_description);
-
-    debug!("Reading new pyproject.toml at {}", pyproject_path.display());
-    let content = fs::read_to_string(&pyproject_path)
-        .map_err(|e| format!("Failed to read pyproject.toml: {}", e))?;
-
-    let mut lines: Vec<String> = Vec::new();
-    let mut in_project_section = false;
-    let mut version_updated = false;
-    let mut description_updated = false;
-
-    debug!("Starting to update project metadata");
-    for line in content.lines() {
-        let trimmed = line.trim();
-        debug!("Processing line: {}", trimmed);
-
-        if trimmed == "[project]" {
-            debug!("Found [project] section");
-            in_project_section = true;
-            lines.push(line.to_string());
-            continue;
-        } else if trimmed.starts_with('[') {
-            if in_project_section {
-                debug!("Leaving project section");
-                if !version_updated && poetry_version.is_some() {
-                    let version_line =
-                        format!("version = \"{}\"", poetry_version.as_ref().unwrap());
-                    debug!("Inserting version at section end: {}", version_line);
-                    lines.push(version_line);
-                    version_updated = true;
-                }
-                if !description_updated && poetry_description.is_some() {
-                    let desc_line =
-                        format!("description = \"{}\"", poetry_description.as_ref().unwrap());
-                    debug!("Inserting description at section end: {}", desc_line);
-                    lines.push(desc_line);
-                    description_updated = true;
-                }
-            }
-            in_project_section = false;
-        }
-
-        if !in_project_section {
-            lines.push(line.to_string());
-            continue;
-        }
-
-        // More robust metadata replacement
-        if parse_toml_value(trimmed, "version").is_some() {
-            if let Some(version) = poetry_version.as_ref() {
-                debug!("Replacing version line with: {}", version);
-                lines.push(format!("version = \"{}\"", version));
-                version_updated = true;
-                continue;
-            }
-        } else if parse_toml_value(trimmed, "description").is_some() {
-            if let Some(description) = poetry_description.as_ref() {
-                debug!("Replacing description line with: {}", description);
-                lines.push(format!("description = \"{}\"", description));
-                description_updated = true;
-                continue;
+            if let Some(description) = poetry.get("description") {
+                update_section(
+                    &mut new_doc,
+                    &["project", "description"],
+                    description.clone(),
+                );
             }
         }
-
-        lines.push(line.to_string());
-    }
-
-    // Handle case where [project] section is the last section
-    if in_project_section {
-        debug!("Project section was the last section");
-        if !version_updated && poetry_version.is_some() {
-            let version_line = format!("version = \"{}\"", poetry_version.as_ref().unwrap());
-            debug!("Inserting version at end: {}", version_line);
-            lines.push(version_line);
-            version_updated = true;
-        }
-        if !description_updated && poetry_description.is_some() {
-            let desc_line = format!("description = \"{}\"", poetry_description.as_ref().unwrap());
-            debug!("Inserting description at end: {}", desc_line);
-            lines.push(desc_line);
-            description_updated = true;
-        }
-    }
-
-    // Log metadata update status
-    if let Some(version) = poetry_version.as_ref() {
-        if version_updated {
-            info!("Successfully updated version to: {}", version);
-        } else {
-            warn!("Warning: Version was not updated in the new pyproject.toml");
-        }
-    }
-
-    if let Some(description) = poetry_description.as_ref() {
-        if description_updated {
-            info!("Successfully updated description to: {}", description);
-        } else {
-            warn!("Warning: Description was not updated in the new pyproject.toml");
-        }
-    }
-
-    debug!("Writing updated content back to pyproject.toml");
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(&pyproject_path)
-        .map_err(|e| format!("Failed to open pyproject.toml for writing: {}", e))?;
-
-    for line in lines {
-        debug!("Writing line: {}", line);
-        writeln!(file, "{}", line)
-            .map_err(|e| format!("Failed to write line to pyproject.toml: {}", e))?;
     }
 
     if !extra_urls.is_empty() {
-        debug!("Adding UV section with extra URLs");
-        let uv_section = format!(
-            "\n[tool.uv]\nextra-index-url = {}\n",
-            serde_json::to_string(extra_urls)
-                .map_err(|e| format!("Failed to serialize extra URLs: {}", e))?
+        let mut array = Array::new();
+        for url in extra_urls {
+            array.push(Value::String(Formatted::new(url.to_string())));
+        }
+        update_section(
+            &mut new_doc,
+            &["tool", "uv", "extra-index-url"],
+            Item::Value(Value::Array(array)),
         );
-        file.write_all(uv_section.as_bytes())
-            .map_err(|e| format!("Failed to write uv section: {}", e))?;
     }
 
-    if poetry_version.is_some() || poetry_description.is_some() {
-        info!("Successfully updated project metadata from Poetry configuration");
-    } else {
-        warn!("No metadata was found to update in the Poetry configuration");
-    }
-
-    debug!("Successfully completed pyproject.toml update");
+    let mut doc = read_toml(&pyproject_path)?;
+    write_toml(&pyproject_path, &mut doc)?;
     Ok(())
-}
-
-/// Helper function to parse TOML key-value pairs
-fn parse_toml_value(line: &str, key: &str) -> Option<String> {
-    // First check if the line contains our key
-    if !line.contains(&format!("{} =", key)) && !line.contains(&format!("{}=", key)) {
-        return None;
-    }
-
-    debug!("Attempting to parse {} from line: {}", key, line);
-
-    let parts: Vec<&str> = line.splitn(2, '=').collect();
-    if parts.len() != 2 {
-        debug!("Failed to split line on '='");
-        return None;
-    }
-
-    let key_part = parts[0].trim();
-    if key_part != key {
-        debug!("Key mismatch: expected '{}', found '{}'", key, key_part);
-        return None;
-    }
-
-    let value = parts[1].trim();
-    // Handle both quoted and unquoted values
-    let cleaned_value = value
-        .trim_matches('"') // Remove double quotes
-        .trim_matches('\'') // Remove single quotes
-        .trim(); // Remove any remaining whitespace
-
-    if cleaned_value.is_empty() {
-        debug!("Found empty value for {}", key);
-        None
-    } else {
-        debug!("Successfully parsed {} value: {}", key, cleaned_value);
-        Some(cleaned_value.to_string())
-    }
 }
 
 pub fn update_description(project_dir: &Path, description: &str) -> Result<(), String> {
     let pyproject_path = project_dir.join("pyproject.toml");
+    let mut doc = read_toml(&pyproject_path)?;
 
-    debug!("Reading pyproject.toml at {}", pyproject_path.display());
-    let content = fs::read_to_string(&pyproject_path)
-        .map_err(|e| format!("Failed to read pyproject.toml: {}", e))?;
+    debug!("Updating project description");
+    update_section(
+        &mut doc,
+        &["project", "description"],
+        Item::Value(Value::String(Formatted::new(description.to_string()))),
+    );
 
-    let mut lines: Vec<String> = Vec::new();
-    let mut in_project_section = false;
-    let mut description_updated = false;
-    let mut current_indent = String::new();
-
-    debug!("Starting to update project description");
-    for line in content.lines() {
-        let trimmed = line.trim();
-
-        // Capture the indentation of the current line
-        if let Some(indent_end) = line.find(|c: char| !c.is_whitespace()) {
-            current_indent = line[..indent_end].to_string();
-        }
-
-        if trimmed == "[project]" {
-            debug!("Found [project] section");
-            in_project_section = true;
-            lines.push(line.to_string());
-            continue;
-        } else if trimmed.starts_with('[') && trimmed != "[project]" {
-            if in_project_section && !description_updated {
-                let desc_line = format!(
-                    "{}description = \"{}\"",
-                    current_indent,
-                    escape_description(description)
-                );
-                debug!("Inserting description at section end: {}", desc_line);
-                lines.push(desc_line);
-                description_updated = true;
-            }
-            in_project_section = false;
-            lines.push(line.to_string());
-            continue;
-        }
-
-        if in_project_section && trimmed.starts_with("description") {
-            if let Some(_equals_pos) = trimmed.find('=') {
-                debug!("Replacing existing description line");
-                lines.push(format!(
-                    "{}description = \"{}\"",
-                    current_indent,
-                    escape_description(description)
-                ));
-                description_updated = true;
-                continue;
-            }
-        }
-
-        lines.push(line.to_string());
-    }
-
-    // Handle case where [project] section is the last section
-    if in_project_section && !description_updated {
-        debug!("Project section was the last section");
-        let desc_line = format!(
-            "{}description = \"{}\"",
-            current_indent,
-            escape_description(description)
-        );
-        debug!("Inserting description at end: {}", desc_line);
-        lines.push(desc_line);
-    }
-
-    debug!("Writing updated content back to pyproject.toml");
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(&pyproject_path)
-        .map_err(|e| format!("Failed to open pyproject.toml for writing: {}", e))?;
-
-    for line in lines {
-        writeln!(file, "{}", line)
-            .map_err(|e| format!("Failed to write line to pyproject.toml: {}", e))?;
-    }
-
-    info!("Successfully updated project description from setup.py");
+    let mut doc = read_toml(&pyproject_path)?;
+    write_toml(&pyproject_path, &mut doc)?;
+    info!("Successfully updated project description");
     Ok(())
 }
 
-/// Escapes special characters in the description string for TOML compatibility
-fn escape_description(description: &str) -> String {
-    description
-        .replace('\\', "\\\\") // Escape backslashes first
-        .replace('\"', "\\\"") // Escape double quotes
-        .replace('\n', "\\n") // Convert newlines to escaped form
-        .replace('\r', "\\r") // Convert carriage returns
-        .replace('\t', "\\t") // Convert tabs
+pub fn update_url(project_dir: &Path, url: &str) -> Result<(), String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+    let mut doc = read_toml(&pyproject_path)?;
+
+    debug!("Updating project URL");
+    let mut urls_table = Table::new();
+    urls_table.insert(
+        "repository",
+        Item::Value(Value::String(Formatted::new(url.to_string()))),
+    );
+    update_section(&mut doc, &["project", "urls"], Item::Table(urls_table));
+
+    let mut doc = read_toml(&pyproject_path)?;
+    write_toml(&pyproject_path, &mut doc)?;
+
+    info!("Successfully updated project URL");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_update_description() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+
+        // Create initial pyproject.toml
+        let initial_content = r#"[project]
+name = "test"
+version = "0.1.0"
+"#;
+        fs::write(project_dir.join("pyproject.toml"), initial_content).unwrap();
+
+        // Update description
+        let description = "A test project description";
+        update_description(&project_dir, description).unwrap();
+
+        // Read updated content
+        let content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+        assert!(content.contains(&format!("description = \"{}\"", description)));
+    }
+
+    #[test]
+    fn test_update_url() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+
+        // Create initial pyproject.toml
+        let initial_content = r#"[project]
+name = "test"
+version = "0.1.0"
+"#;
+        fs::write(project_dir.join("pyproject.toml"), initial_content).unwrap();
+
+        // Update URL
+        let url = "https://github.com/example/test";
+        update_url(&project_dir, url).unwrap();
+
+        // Read updated content
+        let content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+        assert!(content.contains(&format!("repository = \"{}\"", url)));
+    }
+
+    #[test]
+    fn test_update_pyproject_with_extra_urls() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+
+        // Create old.pyproject.toml
+        let old_content = r#"[tool.poetry]
+name = "test"
+version = "1.0.0"
+description = "Old description"
+"#;
+        fs::write(project_dir.join("old.pyproject.toml"), old_content).unwrap();
+
+        // Create new pyproject.toml
+        let new_content = r#"[project]
+name = "test"
+version = "0.1.0"
+"#;
+        fs::write(project_dir.join("pyproject.toml"), new_content).unwrap();
+
+        // Update with extra URLs
+        let extra_urls = vec![
+            "https://test.pypi.org/simple/".to_string(),
+            "https://custom.index/simple/".to_string(),
+        ];
+        update_pyproject_toml(&project_dir, &extra_urls).unwrap();
+
+        // Read updated content
+        let content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+        assert!(content.contains("version = \"1.0.0\""));
+        assert!(content.contains("description = \"Old description\""));
+        assert!(content.contains("https://test.pypi.org/simple/"));
+        assert!(content.contains("https://custom.index/simple/"));
+    }
 }

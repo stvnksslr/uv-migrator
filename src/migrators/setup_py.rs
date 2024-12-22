@@ -168,12 +168,12 @@ impl SetupPyMigrationSource {
     }
 
     fn extract_setup_content(content: &str) -> Result<String, String> {
-        let mut lines = content.lines().enumerate().peekable();
+        let lines = content.lines().enumerate().peekable();
         let mut setup_content = String::new();
         let mut in_setup = false;
         let mut paren_count = 0;
 
-        while let Some((_, line)) = lines.next() {
+        for (_, line) in lines {
             let trimmed = line.trim();
 
             // Skip empty lines and comments
@@ -224,8 +224,8 @@ impl SetupPyMigrationSource {
         let param_pattern = format!("{} = ", param_name);
         let param_pattern2 = format!("{}=", param_name);
 
-        let mut lines = content.lines().peekable();
-        while let Some(line) = lines.next() {
+        let lines = content.lines().peekable();
+        for line in lines {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 continue;
@@ -267,5 +267,26 @@ impl SetupPyMigrationSource {
         let value = content[..end_pos].to_string();
 
         Some(value)
+    }
+
+    pub fn extract_url(project_dir: &Path) -> Result<Option<String>, String> {
+        let setup_py_path = project_dir.join("setup.py");
+        if !setup_py_path.exists() {
+            return Ok(None);
+        }
+
+        let content = fs::read_to_string(&setup_py_path)
+            .map_err(|e| format!("Failed to read setup.py: {}", e))?;
+
+        if let Some(start_idx) = content.find("setup(") {
+            let bracket_content =
+                SetupPyMigrationSource::extract_setup_content(&content[start_idx..])?;
+            if let Some(url) = SetupPyMigrationSource::extract_parameter(&bracket_content, "url") {
+                debug!("Found URL in setup.py");
+                return Ok(Some(url));
+            }
+        }
+
+        Ok(None)
     }
 }

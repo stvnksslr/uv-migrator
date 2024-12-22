@@ -163,10 +163,7 @@ setup(
 }
 
 /// Helper function to create a temporary test environment with setup.py and pyproject.toml
-fn setup_test_environment(
-    setup_content: &str,
-    pyproject_content: &str,
-) -> (TempDir, PathBuf) {
+fn setup_test_environment(setup_content: &str, pyproject_content: &str) -> (TempDir, PathBuf) {
     let temp_dir = TempDir::new().unwrap();
     let project_dir = temp_dir.path().to_path_buf();
 
@@ -225,7 +222,8 @@ description = "Test project"
 
     let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
     assert!(updated_content.contains(r#"authors = ["#));
-    assert!(updated_content.contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
+    assert!(updated_content
+        .contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
 }
 
 #[test]
@@ -255,7 +253,8 @@ authors = [
     update_authors(&project_dir).unwrap();
 
     let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
-    assert!(updated_content.contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
+    assert!(updated_content
+        .contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
     assert!(!updated_content.contains(r#"{ name = "Old Author", email = "old@example.com" }"#));
 }
 
@@ -309,4 +308,108 @@ description = "Test project"
 
     let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
     assert!(!updated_content.contains("authors"));
+}
+
+#[test]
+fn test_update_authors_with_url() {
+    let setup_content = r#"
+from setuptools import setup
+
+setup(
+    name="test-project",
+    version="1.0.0",
+    author="John Riebold",
+    author_email="john.riebold@pitchbook.com",
+    url="https://gitlab.com/example/project",
+    description="Test project"
+)
+"#;
+    let pyproject_content = r#"[project]
+name = "test-project"
+version = "1.0.0"
+description = "Test project"
+authors = [
+    { name = "John Riebold", email = "john.riebold@pitchbook.com" }
+]
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_environment(setup_content, pyproject_content);
+
+    update_authors(&project_dir).unwrap();
+
+    let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+    assert!(updated_content
+        .contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
+    assert!(
+        updated_content.contains(r#"urls = { repository = "https://gitlab.com/example/project" }"#)
+    );
+
+    // Ensure there are no blank lines between authors and urls
+    let lines: Vec<&str> = updated_content.lines().collect();
+    let authors_index = lines
+        .iter()
+        .position(|&line| line.contains("authors"))
+        .unwrap();
+    let urls_index = lines
+        .iter()
+        .position(|&line| line.contains("urls"))
+        .unwrap();
+    assert_eq!(
+        authors_index + 1,
+        urls_index,
+        "URLs should be on the line immediately after authors"
+    );
+}
+
+#[test]
+fn test_update_urls_existing_content() {
+    let setup_content = r#"
+from setuptools import setup
+
+setup(
+    name="test-project",
+    version="1.0.0",
+    author="John Riebold",
+    author_email="john.riebold@pitchbook.com",
+    url="https://gitlab.com/updated/project",
+    description="Test project"
+)
+"#;
+    let pyproject_content = r#"[project]
+name = "test-project"
+version = "1.0.0"
+description = "Test project"
+authors = [
+    { name = "Old Author", email = "old@example.com" }
+]
+urls = { repository = "https://oldproject.example.com" }
+requires-python = ">=3.8"
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_environment(setup_content, pyproject_content);
+
+    update_authors(&project_dir).unwrap();
+
+    let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+    assert!(updated_content
+        .contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
+    assert!(
+        updated_content.contains(r#"urls = { repository = "https://gitlab.com/updated/project" }"#)
+    );
+
+    // Validate order of sections
+    let lines: Vec<&str> = updated_content.lines().collect();
+    let authors_index = lines
+        .iter()
+        .position(|&line| line.contains("authors"))
+        .unwrap();
+    let urls_index = lines
+        .iter()
+        .position(|&line| line.contains("urls"))
+        .unwrap();
+    assert_eq!(
+        authors_index + 1,
+        urls_index,
+        "URLs should be on the line immediately after authors"
+    );
 }
