@@ -37,7 +37,6 @@ fn run() -> Result<(), String> {
                     This should be the root directory of your project where pyproject.toml \
                     or requirements.txt is located."
                 )
-                .required_unless_present("self_update")
                 .value_parser(clap::value_parser!(String))
         )
         .arg(

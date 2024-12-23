@@ -133,41 +133,7 @@ impl SetupPyMigrationSource {
         }
     }
 
-    pub fn extract_description(project_dir: &Path) -> Result<Option<String>, String> {
-        let setup_py_path = project_dir.join("setup.py");
-        if !setup_py_path.exists() {
-            return Ok(None);
-        }
-
-        let content = fs::read_to_string(&setup_py_path)
-            .map_err(|e| format!("Failed to read setup.py: {}", e))?;
-
-        // Look for description in setup() call
-        if let Some(start_idx) = content.find("setup(") {
-            let bracket_content =
-                SetupPyMigrationSource::extract_setup_content(&content[start_idx..])?;
-
-            // First try to find long_description
-            if let Some(desc) =
-                SetupPyMigrationSource::extract_parameter(&bracket_content, "long_description")
-            {
-                debug!("Found long_description in setup.py");
-                return Ok(Some(desc));
-            }
-
-            // Fall back to regular description
-            if let Some(desc) =
-                SetupPyMigrationSource::extract_parameter(&bracket_content, "description")
-            {
-                debug!("Found description in setup.py");
-                return Ok(Some(desc));
-            }
-        }
-
-        Ok(None)
-    }
-
-    fn extract_setup_content(content: &str) -> Result<String, String> {
+    pub(crate) fn extract_setup_content(content: &str) -> Result<String, String> {
         let lines = content.lines().enumerate().peekable();
         let mut setup_content = String::new();
         let mut in_setup = false;
@@ -220,7 +186,36 @@ impl SetupPyMigrationSource {
         Ok(setup_content)
     }
 
-    fn extract_parameter(content: &str, param_name: &str) -> Option<String> {
+    pub fn extract_description(project_dir: &Path) -> Result<Option<String>, String> {
+        let setup_py_path = project_dir.join("setup.py");
+        if !setup_py_path.exists() {
+            return Ok(None);
+        }
+
+        let content = fs::read_to_string(&setup_py_path)
+            .map_err(|e| format!("Failed to read setup.py: {}", e))?;
+
+        // Look for description in setup() call
+        if let Some(start_idx) = content.find("setup(") {
+            let bracket_content = Self::extract_setup_content(&content[start_idx..])?;
+
+            // First try to find long_description
+            if let Some(desc) = Self::extract_parameter(&bracket_content, "long_description") {
+                debug!("Found long_description in setup.py");
+                return Ok(Some(desc));
+            }
+
+            // Fall back to regular description
+            if let Some(desc) = Self::extract_parameter(&bracket_content, "description") {
+                debug!("Found description in setup.py");
+                return Ok(Some(desc));
+            }
+        }
+
+        Ok(None)
+    }
+
+    pub(crate) fn extract_parameter(content: &str, param_name: &str) -> Option<String> {
         let param_pattern = format!("{} = ", param_name);
         let param_pattern2 = format!("{}=", param_name);
 
@@ -234,7 +229,7 @@ impl SetupPyMigrationSource {
             if trimmed.starts_with(&param_pattern) || trimmed.starts_with(&param_pattern2) {
                 // Direct string assignment
                 if trimmed.contains('"') || trimmed.contains('\'') {
-                    if let Some(desc) = SetupPyMigrationSource::extract_string_value(trimmed) {
+                    if let Some(desc) = Self::extract_string_value(trimmed) {
                         return Some(desc);
                     }
                 }
@@ -252,7 +247,7 @@ impl SetupPyMigrationSource {
         None
     }
 
-    fn extract_string_value(line: &str) -> Option<String> {
+    pub fn extract_string_value(line: &str) -> Option<String> {
         let after_equals = line.split('=').nth(1)?.trim();
 
         // Handle different quote types
@@ -279,9 +274,8 @@ impl SetupPyMigrationSource {
             .map_err(|e| format!("Failed to read setup.py: {}", e))?;
 
         if let Some(start_idx) = content.find("setup(") {
-            let bracket_content =
-                SetupPyMigrationSource::extract_setup_content(&content[start_idx..])?;
-            if let Some(url) = SetupPyMigrationSource::extract_parameter(&bracket_content, "url") {
+            let bracket_content = Self::extract_setup_content(&content[start_idx..])?;
+            if let Some(url) = Self::extract_parameter(&bracket_content, "url") {
                 debug!("Found URL in setup.py");
                 return Ok(Some(url));
             }

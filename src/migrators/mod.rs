@@ -2,8 +2,8 @@
 
 use crate::migrators::detect::{PoetryProjectType, ProjectType};
 use crate::utils::{
-    create_virtual_environment, parse_pip_conf, update_authors, update_pyproject_toml, update_url,
-    FileTrackerGuard,
+    create_virtual_environment, parse_pip_conf, pyproject, update_authors, update_pyproject_toml,
+    update_url, FileTrackerGuard,
 };
 use log::info;
 use setup_py::SetupPyMigrationSource;
@@ -14,7 +14,6 @@ use std::path::Path;
 mod dependency;
 mod detect;
 pub mod poetry;
-mod pyproject;
 pub mod requirements;
 pub mod setup_py;
 
@@ -207,7 +206,7 @@ pub fn run_migration(
         let migration_source: Box<dyn MigrationSource> = match project_type {
             ProjectType::Poetry(_) => Box::new(poetry::PoetryMigrationSource),
             ProjectType::Requirements => Box::new(requirements::RequirementsMigrationSource),
-            ProjectType::SetupPy => Box::new(setup_py::SetupPyMigrationSource),
+            ProjectType::SetupPy => Box::new(SetupPyMigrationSource),
         };
 
         let mut dependencies = migration_source.extract_dependencies(project_dir)?;
@@ -243,11 +242,11 @@ pub fn run_migration(
 
         // Migrate setup.py metadata
         if let Some(description) =
-            setup_py::SetupPyMigrationSource::extract_description(project_dir)?
+            SetupPyMigrationSource::extract_description(project_dir)?
         {
             info!("Migrating description from setup.py");
             file_tracker.track_file(&pyproject_path)?;
-            crate::utils::pyproject::update_description(project_dir, &description)?;
+            pyproject::update_description(project_dir, &description)?;
         }
 
         // Migrate authors from setup.py

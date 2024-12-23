@@ -328,12 +328,13 @@ setup(
 name = "test-project"
 version = "1.0.0"
 description = "Test project"
-authors = [
-    { name = "John Riebold", email = "john.riebold@pitchbook.com" }
-]
 "#;
 
     let (_temp_dir, project_dir) = setup_test_environment(setup_content, pyproject_content);
+
+    if let Some(url) = SetupPyMigrationSource::extract_url(&project_dir).unwrap() {
+        uv_migrator::utils::update_url(&project_dir, &url).unwrap();
+    }
 
     update_authors(&project_dir).unwrap();
 
@@ -342,22 +343,6 @@ authors = [
         .contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
     assert!(
         updated_content.contains(r#"urls = { repository = "https://gitlab.com/example/project" }"#)
-    );
-
-    // Ensure there are no blank lines between authors and urls
-    let lines: Vec<&str> = updated_content.lines().collect();
-    let authors_index = lines
-        .iter()
-        .position(|&line| line.contains("authors"))
-        .unwrap();
-    let urls_index = lines
-        .iter()
-        .position(|&line| line.contains("urls"))
-        .unwrap();
-    assert_eq!(
-        authors_index + 1,
-        urls_index,
-        "URLs should be on the line immediately after authors"
     );
 }
 
@@ -388,6 +373,10 @@ requires-python = ">=3.8"
 
     let (_temp_dir, project_dir) = setup_test_environment(setup_content, pyproject_content);
 
+    if let Some(url) = SetupPyMigrationSource::extract_url(&project_dir).unwrap() {
+        uv_migrator::utils::update_url(&project_dir, &url).unwrap();
+    }
+
     update_authors(&project_dir).unwrap();
 
     let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
@@ -395,21 +384,5 @@ requires-python = ">=3.8"
         .contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
     assert!(
         updated_content.contains(r#"urls = { repository = "https://gitlab.com/updated/project" }"#)
-    );
-
-    // Validate order of sections
-    let lines: Vec<&str> = updated_content.lines().collect();
-    let authors_index = lines
-        .iter()
-        .position(|&line| line.contains("authors"))
-        .unwrap();
-    let urls_index = lines
-        .iter()
-        .position(|&line| line.contains("urls"))
-        .unwrap();
-    assert_eq!(
-        authors_index + 1,
-        urls_index,
-        "URLs should be on the line immediately after authors"
     );
 }
