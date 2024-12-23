@@ -21,7 +21,11 @@ pub fn update_pyproject_toml(project_dir: &Path, extra_urls: &[String]) -> Resul
             }
 
             if let Some(description) = poetry.get("description") {
-                update_section(&mut new_doc, &["project", "description"], description.clone());
+                update_section(
+                    &mut new_doc,
+                    &["project", "description"],
+                    description.clone(),
+                );
             }
         }
     }
@@ -63,10 +67,7 @@ pub fn update_url(project_dir: &Path, url: &str) -> Result<(), String> {
     let mut doc = read_toml(&pyproject_path)?;
 
     let mut urls_table = toml_edit::InlineTable::new();
-    urls_table.insert(
-        "repository",
-        Value::String(Formatted::new(url.to_string())),
-    );
+    urls_table.insert("repository", Value::String(Formatted::new(url.to_string())));
 
     update_section(
         &mut doc,

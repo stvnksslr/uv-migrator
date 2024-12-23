@@ -64,24 +64,28 @@ impl PoetryMigrationSource {
                     Some(v.to_string())
                 }
             }
-            Item::Value(Value::InlineTable(t)) => {
-                t.get("version").and_then(|v| match v {
-                    Value::String(s) => {
-                        let version = s.value().trim();
-                        if version == "*" { None } else { Some(version.to_string()) }
+            Item::Value(Value::InlineTable(t)) => t.get("version").and_then(|v| match v {
+                Value::String(s) => {
+                    let version = s.value().trim();
+                    if version == "*" {
+                        None
+                    } else {
+                        Some(version.to_string())
                     }
-                    _ => None,
-                })
-            }
-            Item::Table(t) => {
-                t.get("version").and_then(|v| match v {
-                    Item::Value(Value::String(s)) => {
-                        let version = s.value().trim();
-                        if version == "*" { None } else { Some(version.to_string()) }
+                }
+                _ => None,
+            }),
+            Item::Table(t) => t.get("version").and_then(|v| match v {
+                Item::Value(Value::String(s)) => {
+                    let version = s.value().trim();
+                    if version == "*" {
+                        None
+                    } else {
+                        Some(version.to_string())
                     }
-                    _ => None,
-                })
-            }
+                }
+                _ => None,
+            }),
             _ => None,
         };
 

@@ -181,8 +181,8 @@ from setuptools import setup
 setup(
     name="test-project",
     version="1.0.0",
-    author="John Riebold",
-    author_email="john.riebold@pitchbook.com",
+    author="Demo Name",
+    author_email="demo.name@corp.com",
     description="Test project"
 )
 "#;
@@ -190,11 +190,8 @@ setup(
 
     let authors = extract_authors_from_setup_py(&project_dir).unwrap();
     assert_eq!(authors.len(), 1);
-    assert_eq!(authors[0].name, "John Riebold");
-    assert_eq!(
-        authors[0].email,
-        Some("john.riebold@pitchbook.com".to_string())
-    );
+    assert_eq!(authors[0].name, "Demo Name");
+    assert_eq!(authors[0].email, Some("demo.name@corp.com".to_string()));
 }
 
 #[test]
@@ -205,8 +202,8 @@ from setuptools import setup
 setup(
     name="test-project",
     version="1.0.0",
-    author="John Riebold",
-    author_email="john.riebold@pitchbook.com",
+    author="Demo Name",
+    author_email="demo.name@corp.com",
     description="Test project"
 )
 "#;
@@ -222,8 +219,7 @@ description = "Test project"
 
     let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
     assert!(updated_content.contains(r#"authors = ["#));
-    assert!(updated_content
-        .contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
+    assert!(updated_content.contains(r#"{ name = "Demo Name", email = "demo.name@corp.com" }"#));
 }
 
 #[test]
@@ -234,8 +230,8 @@ from setuptools import setup
 setup(
     name="test-project",
     version="1.0.0",
-    author="John Riebold",
-    author_email="john.riebold@pitchbook.com",
+    author="Demo Name",
+    author_email="demo.name@corp.com",
     description="Test project"
 )
 "#;
@@ -253,8 +249,7 @@ authors = [
     update_authors(&project_dir).unwrap();
 
     let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
-    assert!(updated_content
-        .contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
+    assert!(updated_content.contains(r#"{ name = "Demo Name", email = "demo.name@corp.com" }"#));
     assert!(!updated_content.contains(r#"{ name = "Old Author", email = "old@example.com" }"#));
 }
 
@@ -266,7 +261,7 @@ from setuptools import setup
 setup(
     name="test-project",
     version="1.0.0",
-    author="John Riebold",
+    author="Demo Name",
     description="Test project"
 )
 "#;
@@ -281,7 +276,7 @@ description = "Test project"
     update_authors(&project_dir).unwrap();
 
     let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
-    assert!(updated_content.contains(r#"{ name = "John Riebold" }"#));
+    assert!(updated_content.contains(r#"{ name = "Demo Name" }"#));
     assert!(!updated_content.contains("email"));
 }
 
@@ -318,8 +313,8 @@ from setuptools import setup
 setup(
     name="test-project",
     version="1.0.0",
-    author="John Riebold",
-    author_email="john.riebold@pitchbook.com",
+    author="Demo Name",
+    author_email="demo.name@corp.com",
     url="https://gitlab.com/example/project",
     description="Test project"
 )
@@ -339,8 +334,7 @@ description = "Test project"
     update_authors(&project_dir).unwrap();
 
     let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
-    assert!(updated_content
-        .contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
+    assert!(updated_content.contains(r#"{ name = "Demo Name", email = "demo.name@corp.com" }"#));
     assert!(
         updated_content.contains(r#"urls = { repository = "https://gitlab.com/example/project" }"#)
     );
@@ -354,8 +348,8 @@ from setuptools import setup
 setup(
     name="test-project",
     version="1.0.0",
-    author="John Riebold",
-    author_email="john.riebold@pitchbook.com",
+    author="Demo Name",
+    author_email="demo.name@corp.com",
     url="https://gitlab.com/updated/project",
     description="Test project"
 )
@@ -380,8 +374,7 @@ requires-python = ">=3.8"
     update_authors(&project_dir).unwrap();
 
     let updated_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
-    assert!(updated_content
-        .contains(r#"{ name = "John Riebold", email = "john.riebold@pitchbook.com" }"#));
+    assert!(updated_content.contains(r#"{ name = "Demo Name", email = "demo.name@corp.com" }"#));
     assert!(
         updated_content.contains(r#"urls = { repository = "https://gitlab.com/updated/project" }"#)
     );

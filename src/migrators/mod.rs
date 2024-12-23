@@ -221,6 +221,8 @@ pub fn run_migration(
         migration_tool.prepare_project(project_dir, &mut file_tracker, project_type)?;
         info!("Updating project metadata");
 
+        migration_tool.add_dependencies(project_dir, &dependencies)?;
+
         file_tracker.track_file(&pyproject_path)?;
         update_pyproject_toml(project_dir, &[])?;
 
@@ -235,15 +237,8 @@ pub fn run_migration(
             update_pyproject_toml(project_dir, &extra_urls)?;
         }
 
-        migration_tool.add_dependencies(project_dir, &dependencies)?;
-
-        file_tracker.track_file(&pyproject_path)?;
-        pyproject::append_tool_sections(project_dir)?;
-
         // Migrate setup.py metadata
-        if let Some(description) =
-            SetupPyMigrationSource::extract_description(project_dir)?
-        {
+        if let Some(description) = SetupPyMigrationSource::extract_description(project_dir)? {
             info!("Migrating description from setup.py");
             file_tracker.track_file(&pyproject_path)?;
             pyproject::update_description(project_dir, &description)?;
@@ -260,6 +255,9 @@ pub fn run_migration(
         if let Some(project_url) = url {
             update_url(project_dir, &project_url)?;
         }
+
+        file_tracker.track_file(&pyproject_path)?;
+        pyproject::append_tool_sections(project_dir)?;
 
         if hello_py_path.exists() {
             fs::remove_file(&hello_py_path)
