@@ -93,6 +93,7 @@ pub fn append_tool_sections(project_dir: &Path) -> Result<(), String> {
     let old_doc = read_toml(&old_pyproject_path)?;
     let mut new_doc = read_toml(&pyproject_path)?;
 
+    // Only proceed if there are tool sections to migrate
     if let Some(tool) = old_doc.get("tool") {
         if let Some(tool_table) = tool.as_table() {
             let existing_sections: Vec<String> = new_doc
@@ -101,18 +102,29 @@ pub fn append_tool_sections(project_dir: &Path) -> Result<(), String> {
                 .map(|t| t.iter().map(|(k, _)| k.to_string()).collect())
                 .unwrap_or_default();
 
+            // Track if any sections were actually copied
+            let mut sections_copied = false;
+
+            // Copy each non-poetry tool section that doesn't already exist
             for (section_name, section_value) in tool_table.iter() {
                 if section_name != "poetry"
                     && !existing_sections.contains(&section_name.to_string())
+                    && !section_value.as_table().map_or(false, |t| t.is_empty())
                 {
                     debug!("Copying tool section: {}", section_name);
                     update_section(&mut new_doc, &["tool", section_name], section_value.clone());
+                    sections_copied = true;
                 }
+            }
+
+            if sections_copied {
+                write_toml(&pyproject_path, &mut new_doc)?;
+                info!("Successfully managed tool sections in new pyproject.toml");
+            } else {
+                debug!("No tool sections needed migration");
             }
         }
     }
 
-    write_toml(&pyproject_path, &mut new_doc)?;
-    info!("Successfully managed tool sections in new pyproject.toml");
     Ok(())
 }

@@ -1,7 +1,7 @@
 pub mod author;
 pub mod file_tracker;
 pub mod pip;
-pub(crate) mod pyproject;
+pub mod pyproject;
 pub mod toml;
 #[cfg(feature = "self_update")]
 mod update;
