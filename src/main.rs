@@ -4,7 +4,6 @@ use log::{error, info};
 use std::env;
 use std::path::Path;
 use std::process::exit;
-
 mod migrators;
 mod types;
 mod utils;
@@ -22,7 +21,7 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let matches = Command::new("uv-migrator")
+    let mut cmd = Command::new("uv-migrator")
         .version(env!("CARGO_PKG_VERSION"))
         .about("A tool for migrating Python projects to use the uv package manager")
         .long_about(
@@ -38,7 +37,6 @@ fn run() -> Result<(), String> {
                     This should be the root directory of your project where pyproject.toml \
                     or requirements.txt is located."
                 )
-                .required_unless_present("self-update")
                 .value_parser(clap::value_parser!(String))
         )
         .arg(
@@ -74,9 +72,12 @@ fn run() -> Result<(), String> {
                 )
                 .action(clap::ArgAction::Append)
                 .value_parser(clap::value_parser!(String))
-        )
-        .arg(
-            Arg::new("self-update")
+        );
+
+    #[cfg(feature = "self_update")]
+    {
+        cmd = cmd.arg(
+            Arg::new("self_update")
                 .long("self-update")
                 .help("Update uv-migrator to the latest version")
                 .long_help(
@@ -84,8 +85,11 @@ fn run() -> Result<(), String> {
                     The tool will automatically update itself if a newer version is available."
                 )
                 .action(clap::ArgAction::SetTrue)
-        )
-        .after_help(
+        );
+    }
+
+    let after_help = {
+        let mut help = String::from(
             "EXAMPLES:\n\
             # Migrate a project in the current directory\n\
             uv-migrator .\n\
@@ -97,21 +101,39 @@ fn run() -> Result<(), String> {
             uv-migrator . --import-index https://private.pypi.org/simple/\n\
             \n\
             # Migrate using global pip configuration\n\
-            uv-migrator . --import-global-pip-conf\n\
-            \n\
-            # Update uv-migrator to the latest version\n\
-            uv-migrator --self-update\n\
-            \n\
-            For more information and documentation, visit:\n\
-            https://github.com/stvnksslr/uv-migrator"
-        )
-        .get_matches();
+            uv-migrator . --import-global-pip-conf\n",
+        );
 
-    if matches.get_flag("self-update") {
-        return match utils::update() {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("Failed to update: {}", e)),
-        };
+        #[cfg(feature = "self_update")]
+        {
+            help.push_str(
+                "\n\
+                # Update uv-migrator to the latest version\n\
+                uv-migrator --self-update\n",
+            );
+        }
+
+        help.push_str(
+            "\n\
+            For more information and documentation, visit:\n\
+            https://github.com/stvnksslr/uv-migrator",
+        );
+
+        help
+    };
+
+    cmd = cmd.after_help(after_help);
+
+    let matches = cmd.get_matches();
+
+    #[cfg(feature = "self_update")]
+    {
+        if matches.get_flag("self_update") {
+            return match utils::update() {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Failed to update: {}", e)),
+            };
+        }
     }
 
     if !matches.contains_id("PATH") {

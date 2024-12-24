@@ -10,16 +10,21 @@ readme = "README.md"
 keywords = ["python", "uv"]
 
 [dependencies]
-clap = "4.5.20"
+clap = "4.5.23"
 dirs = "5.0.1"
-env_logger = "0.11.5"
 log = "0.4.22"
-self_update = { version = "0.41.0", features = ["archive-tar", "archive-zip", "compression-flate2", "rustls"], default-features = false }
-serde = { version = "1.0.214", features = ["derive"] }
-serde_json = "1.0.132"
+env_logger = "0.11.6"
+self_update = { version = "0.41.0", features = [
+    "archive-tar",
+    "archive-zip",
+    "compression-flate2",
+    "rustls",
+], default-features = false, optional = true }
+serde = { version = "1.0.216", features = ["derive"] }
 toml = "0.8.19"
-which = "7.0.0"
-semver = "1.0"
+which = "7.0.1"
+semver = "1.0.24"
+toml_edit = "0.22.22"
 
 [dev-dependencies]
 tempfile = "3.14.0"
@@ -27,4 +32,10 @@ tempfile = "3.14.0"
 [profile.release]
 lto = true
 strip = true
+codegen-units = 3
+
+[profile.dev]
+codegen-units = 1
+
+[profile.test]
 codegen-units = 1
