@@ -1,208 +1,360 @@
 use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use uv_migrator::utils::pyproject::append_tool_sections;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Helper function to create a temporary test directory with pyproject files.
+///
+/// # Arguments
+///
+/// * `old_content` - Content for old.pyproject.toml
+/// * `new_content` - Content for pyproject.toml
+///
+/// # Returns
+///
+/// A tuple containing the temporary directory and its path
+fn setup_test_files(old_content: &str, new_content: &str) -> (TempDir, std::path::PathBuf) {
+    let temp_dir = TempDir::new().unwrap();
+    let project_dir = temp_dir.path().to_path_buf();
 
-    const LINE_LENGTH: &str = "88";
-    const PY_VERSION: &str = "py39";
+    fs::write(project_dir.join("old.pyproject.toml"), old_content).unwrap();
+    fs::write(project_dir.join("pyproject.toml"), new_content).unwrap();
 
-    struct TestContext {
-        temp_dir: TempDir,
-        project_dir: PathBuf,
-    }
+    (temp_dir, project_dir)
+}
 
-    impl TestContext {
-        fn new() -> io::Result<Self> {
-            let temp_dir = tempfile::tempdir()?;
-            let project_dir = temp_dir.path().to_path_buf();
-            Ok(Self {
-                temp_dir,
-                project_dir,
-            })
-        }
+#[test]
+fn test_append_tool_sections() {
+    let old_content = r#"
+[tool.poetry]
+name = "test"
+version = "0.1.0"
 
-        fn create_file(&self, name: &str, content: &str) -> io::Result<PathBuf> {
-            let path = self.project_dir.join(name);
-            let mut file = fs::File::create(&path)?;
-            file.write_all(content.as_bytes())?;
-            Ok(path)
-        }
+[tool.black]
+line-length = 100
+target-version = ["py37"]
 
-        fn path(&self) -> &Path {
-            &self.project_dir
-        }
-    }
+[tool.isort]
+profile = "black"
+"#;
 
-    /// Test appending tool sections to an empty project.
-    ///
-    /// This test verifies that:
-    /// 1. Existing tool sections from `old.pyproject.toml` are correctly appended to `pyproject.toml`
-    /// 2. The updated `pyproject.toml` contains the expected tool sections and configurations
-    /// 3. No empty sections like `[tool]` are present in the updated `pyproject.toml`
-    ///
-    /// # Returns
-    ///
-    /// An `io::Result` indicating whether the test passed or failed with an error message
-    #[test]
-    fn test_append_tool_sections_with_empty_project() -> io::Result<()> {
-        let ctx = TestContext::new()?;
+    let new_content = r#"
+[project]
+name = "test"
+version = "0.1.0"
+description = "A test project"
+"#;
 
-        // Create old.pyproject.toml
-        let old_pyproject_content = format!(
-            r#"
-            [tool.black]
-            line-length = {LINE_LENGTH}
+    let (_temp_dir, project_dir) = setup_test_files(old_content, new_content);
+    append_tool_sections(&project_dir).unwrap();
 
-            [tool.isort]
-            profile = "black"
-        "#
-        );
-        ctx.create_file("old.pyproject.toml", &old_pyproject_content)?;
+    let result = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
 
-        // Create pyproject.toml
-        let pyproject_content = r#"
-            [tool.poetry]
-            name = "example"
-            version = "0.1.0"
-        "#;
-        let pyproject_path = ctx.create_file("pyproject.toml", pyproject_content)?;
+    // Verify tool sections were copied correctly
+    assert!(
+        result.contains("[tool.black]"),
+        "black section should be present"
+    );
+    assert!(
+        result.contains("[tool.isort]"),
+        "isort section should be present"
+    );
+    assert!(
+        result.contains("line-length = 100"),
+        "black settings should be preserved"
+    );
+    assert!(
+        result.contains("profile = \"black\""),
+        "isort settings should be preserved"
+    );
 
-        // Call the function
-        append_tool_sections(ctx.path()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    // Verify poetry section was not copied
+    assert!(
+        !result.contains("[tool.poetry]"),
+        "poetry section should not be present"
+    );
 
-        // Read and verify the updated pyproject.toml
-        let updated_content = fs::read_to_string(&pyproject_path)?;
-
+    // Verify [tool] section behavior
+    let tool_count = result.matches("[tool]").count();
+    assert!(tool_count <= 1, "Should not have multiple [tool] sections");
+    if tool_count == 1 {
+        // If we have a [tool] section, ensure it's not empty by checking for its subsections
+        let tool_index = result.find("[tool]").unwrap();
+        let next_section = result[tool_index..]
+            .find("\n[")
+            .unwrap_or(result.len() - tool_index);
+        let tool_content = &result[tool_index..tool_index + next_section];
         assert!(
-            updated_content.contains("[tool.poetry]"),
-            "Missing poetry section"
-        );
-        for (section, config) in [
-            ("black", format!("line-length = {LINE_LENGTH}")),
-            ("isort", "profile = \"black\"".to_owned()),
-        ] {
-            assert!(
-                updated_content.contains(&format!("[tool.{}]", section)),
-                "Missing {} section",
-                section
-            );
-            assert!(
-                updated_content.contains(&config),
-                "Missing {} configuration",
-                section
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Test appending tool sections to a project.
-    ///
-    /// This test verifies that:
-    /// 1. Existing tool sections from `old.pyproject.toml` are correctly appended to `pyproject.toml`
-    /// 2. The updated `pyproject.toml` contains the expected tool sections and configurations
-    /// 3. No empty sections like `[tool]` are present in the updated `pyproject.toml`
-    ///
-    /// # Returns
-    ///
-    /// An `io::Result` indicating whether the test passed or failed with an error message
-    #[test]
-    fn test_append_tool_sections() -> io::Result<()> {
-        let ctx = TestContext::new()?;
-
-        let old_pyproject_content = format!(
-            r#"
-        [tool.black]
-        line-length = {LINE_LENGTH}
-        target-version = ["{PY_VERSION}"]
-
-        [tool.isort]
-        profile = "black"
-        line_length = {LINE_LENGTH}
-
-        [tool.ruff]
-        target-version = "{PY_VERSION}"
-        line-length = {LINE_LENGTH}
-
-        [tool.mypy]
-        ignore_missing_imports = true
-        namespace_packages = false
-
-        [tool]
-    "#
-        );
-        ctx.create_file("old.pyproject.toml", &old_pyproject_content)?;
-
-        let pyproject_content = r#"
-        [build-system]
-        requires = ["hatchling"]
-        build-backend = "hatchling.build"
-    "#;
-        let pyproject_path = ctx.create_file("pyproject.toml", pyproject_content)?;
-
-        append_tool_sections(ctx.path()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-
-        let updated_content = fs::read_to_string(&pyproject_path)?;
-
-        // Verify all sections with detailed messages
-        let expected_sections = [
-            (
-                "black",
-                vec![
-                    format!("line-length = {LINE_LENGTH}"),
-                    format!("target-version = [\"{PY_VERSION}\"]"),
-                ],
-            ),
-            (
-                "isort",
-                vec![
-                    "profile = \"black\"".to_string(),
-                    format!("line_length = {LINE_LENGTH}"),
-                ],
-            ),
-            (
-                "ruff",
-                vec![
-                    format!("target-version = \"{PY_VERSION}\""),
-                    format!("line-length = {LINE_LENGTH}"),
-                ],
-            ),
-            (
-                "mypy",
-                vec![
-                    "ignore_missing_imports = true".to_string(),
-                    "namespace_packages = false".to_string(),
-                ],
-            ),
-        ];
-
-        for (section, configs) in expected_sections {
-            assert!(
-                updated_content.contains(&format!("[tool.{}]", section)),
-                "Missing {} section",
-                section
-            );
-            for config in configs {
-                assert!(
-                    updated_content.contains(&config),
-                    "Missing {} config: {}",
-                    section,
-                    config
-                );
-            }
-        }
-
-        // Negative case: Ensure no empty sections like [tool] are present
-        assert!(
-            !updated_content.contains("[tool]\n"),
+            tool_content.contains("[tool.black]") || tool_content.contains("[tool.isort]"),
             "Empty [tool] section should not be present"
         );
-
-        Ok(())
     }
+}
+
+#[test]
+fn test_append_tool_sections_with_existing() {
+    let old_content = r#"
+[tool.poetry]
+name = "test"
+version = "0.1.0"
+
+[tool.black]
+line-length = 100
+
+[tool.isort]
+profile = "black"
+"#;
+
+    let new_content = r#"
+[project]
+name = "test"
+version = "0.1.0"
+
+[tool.black]
+line-length = 88
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_files(old_content, new_content);
+    append_tool_sections(&project_dir).unwrap();
+
+    let result = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+
+    // Verify existing tool.black was preserved
+    let black_section = result.find("[tool.black]").unwrap();
+    let next_section = result[black_section..]
+        .find("\n[")
+        .unwrap_or(result.len() - black_section);
+    let black_content = &result[black_section..black_section + next_section];
+    assert!(
+        black_content.contains("line-length = 88"),
+        "Existing black configuration should be preserved"
+    );
+
+    // Verify isort was copied
+    assert!(
+        result.contains("[tool.isort]"),
+        "isort section should be present"
+    );
+    assert!(
+        result.contains("profile = \"black\""),
+        "isort settings should be preserved"
+    );
+
+    // Verify no empty sections
+    assert!(
+        !result.matches("[tool]").any(|_| true),
+        "Should not have empty [tool] section"
+    );
+}
+
+#[test]
+fn test_preserve_formatting() {
+    let old_content = r#"
+[tool.black]
+line-length = 100  # Custom line length
+target-version = [
+    "py37",
+    "py38",
+]  # Supported versions
+
+[tool.isort]
+profile = "black"  # Match black
+"#;
+
+    let new_content = "[project]\nname = \"test\"\n";
+
+    let (_temp_dir, project_dir) = setup_test_files(old_content, new_content);
+    append_tool_sections(&project_dir).unwrap();
+
+    let result = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+
+    // Verify comments and formatting were preserved
+    assert!(result.contains("line-length = 100  # Custom line length"));
+    assert!(result.contains("profile = \"black\"  # Match black"));
+    assert!(result.contains(
+        r#"target-version = [
+    "py37",
+    "py38",
+]  # Supported versions"#
+    ));
+}
+
+#[test]
+fn test_no_old_pyproject() {
+    let new_content = r#"
+[project]
+name = "test"
+version = "0.1.0"
+description = "A test project"
+"#;
+
+    let temp_dir = TempDir::new().unwrap();
+    let project_dir = temp_dir.path().to_path_buf();
+    fs::write(project_dir.join("pyproject.toml"), new_content).unwrap();
+
+    let result = append_tool_sections(&project_dir);
+    assert!(
+        result.is_ok(),
+        "Should handle missing old.pyproject.toml gracefully"
+    );
+
+    let final_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+    assert_eq!(
+        final_content, new_content,
+        "Content should remain unchanged"
+    );
+    assert!(
+        !final_content.contains("[tool]"),
+        "Should not have empty [tool] section"
+    );
+}
+
+#[test]
+fn test_nested_tool_sections() {
+    let old_content = r#"
+[tool.poetry]
+name = "test"
+version = "0.1.0"
+
+[tool.black]
+line-length = 100
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
+"#;
+
+    let new_content = r#"
+[project]
+name = "test"
+version = "0.1.0"
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_files(old_content, new_content);
+    append_tool_sections(&project_dir).unwrap();
+
+    let result = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+
+    // Verify nested sections were copied correctly
+    assert!(
+        result.contains("[tool.pytest.ini_options]"),
+        "Nested pytest section should be present"
+    );
+    assert!(
+        result.contains("minversion = \"6.0\""),
+        "Nested section content should be preserved"
+    );
+    assert!(
+        result.contains("testpaths = [\"tests\"]"),
+        "Array values should be preserved"
+    );
+
+    // Verify no empty sections
+    assert!(
+        !result.matches("[tool]").any(|_| true),
+        "Should not have empty [tool] section"
+    );
+    let tool_sections = result.matches("[tool.").count();
+    assert!(tool_sections > 0, "Should have non-empty tool sections");
+}
+
+#[test]
+fn test_empty_nested_sections() {
+    let old_content = r#"
+[tool.poetry]
+name = "test"
+
+[tool.black]
+line-length = 100
+
+[tool.pytest]
+
+[tool.pytest.ini_options]
+"#;
+
+    let new_content = r#"
+[project]
+name = "test"
+version = "0.1.0"
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_files(old_content, new_content);
+    append_tool_sections(&project_dir).unwrap();
+
+    let result = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+
+    // Verify only non-empty sections were copied
+    assert!(
+        result.contains("[tool.black]"),
+        "Non-empty black section should be present"
+    );
+    assert!(
+        !result.contains("[tool.pytest]"),
+        "Empty pytest section should not be present"
+    );
+    assert!(
+        !result.contains("[tool.pytest.ini_options]"),
+        "Empty nested section should not be present"
+    );
+
+    // Verify no empty tool section
+    assert!(
+        !result.matches("[tool]").any(|_| true),
+        "Should not have empty [tool] section"
+    );
+}
+
+#[test]
+fn test_no_empty_tool_section() {
+    let old_content = r#"
+[tool.poetry]
+name = "test"
+version = "0.1.0"
+"#;
+
+    let new_content = r#"
+[project]
+name = "test"
+version = "0.1.0"
+description = "A test project"
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_files(old_content, new_content);
+    append_tool_sections(&project_dir).unwrap();
+
+    let result = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+    assert!(
+        !result.contains("[tool]"),
+        "Empty [tool] section should not be present"
+    );
+}
+
+#[test]
+fn test_no_empty_tool_section_after_cleanup() {
+    let old_content = r#"
+[tool.poetry]
+name = "test"
+version = "0.1.0"
+
+[tool.black]
+"#;
+
+    let new_content = r#"
+[project]
+name = "test"
+version = "0.1.0"
+"#;
+
+    let (_temp_dir, project_dir) = setup_test_files(old_content, new_content);
+    append_tool_sections(&project_dir).unwrap();
+
+    let result = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+    assert!(
+        !result.contains("[tool]"),
+        "Empty [tool] section should not be present after cleanup"
+    );
+    assert!(
+        !result.contains("[tool.black]"),
+        "Empty black section should be cleaned up"
+    );
 }
