@@ -266,6 +266,12 @@ pub fn run_migration(
         file_tracker.track_file(&pyproject_path)?;
         pyproject::append_tool_sections(project_dir)?;
 
+        // Reorder TOML sections as the final step
+        info!("Reordering pyproject.toml sections");
+        file_tracker.track_file(&pyproject_path)?;
+        crate::utils::toml::reorder_toml_sections(project_dir)?;
+
+        // Remove unwanted files such as the default hello.py
         if hello_py_path.exists() {
             fs::remove_file(&hello_py_path)
                 .map_err(|e| format!("Failed to delete hello.py: {}", e))?;

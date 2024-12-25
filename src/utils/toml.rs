@@ -163,3 +163,222 @@ pub fn update_section(doc: &mut DocumentMut, section_path: &[&str], content: Ite
     let last_section = section_path.last().unwrap();
     current.insert(last_section, content);
 }
+
+/// Reorders sections in a TOML file to group all [tool.*] sections at the bottom
+/// while preserving the exact content and formatting of each section.
+///
+/// The desired order is:
+/// 1. [project] and related sections
+/// 2. [build-system]
+/// 3. Other non-tool sections
+/// 4. All [tool.*] sections
+///
+/// This should be called as the final step in the migration process after all other TOML
+/// modifications are complete.
+///
+/// # Arguments
+///
+/// * `project_dir` - The directory containing the pyproject.toml file
+///
+/// # Returns
+///
+/// * `Result<(), String>` - Ok(()) on success, or error message on failure
+pub fn reorder_toml_sections(project_dir: &Path) -> Result<(), String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+    let content = fs::read_to_string(&pyproject_path)
+        .map_err(|e| format!("Failed to read pyproject.toml: {}", e))?;
+
+    // Split the content into sections while preserving empty lines between sections
+    let mut sections: Vec<String> = Vec::new();
+    let mut current_section = String::new();
+    let mut in_section = false;
+
+    for line in content.lines() {
+        if line.starts_with('[') {
+            if in_section {
+                sections.push(current_section.trim_end().to_string());
+                current_section = String::new();
+            }
+            in_section = true;
+            current_section.push_str(line);
+            current_section.push('\n');
+        } else if !in_section && !line.trim().is_empty() {
+            // If we find content before any section, treat it as its own section
+            sections.push(line.to_string());
+        } else if in_section {
+            current_section.push_str(line);
+            current_section.push('\n');
+        }
+    }
+
+    if !current_section.is_empty() {
+        sections.push(current_section.trim_end().to_string());
+    }
+
+    // Sort sections into categories
+    let mut project_sections: Vec<String> = Vec::new();
+    let mut build_system_section: Option<String> = None;
+    let mut tool_sections: Vec<String> = Vec::new();
+    let mut other_sections: Vec<String> = Vec::new();
+
+    for section in sections {
+        if section.trim().starts_with("[project") {
+            project_sections.push(section);
+        } else if section.trim().starts_with("[build-system]") {
+            build_system_section = Some(section);
+        } else if section.trim().starts_with("[tool.") {
+            tool_sections.push(section);
+        } else {
+            other_sections.push(section);
+        }
+    }
+
+    // Combine sections in the desired order
+    let mut final_content = String::new();
+
+    // Add project sections first
+    for section in project_sections {
+        final_content.push_str(&section);
+        final_content.push_str("\n\n");
+    }
+
+    // Add build-system section if it exists
+    if let Some(build_section) = build_system_section {
+        final_content.push_str(&build_section);
+        final_content.push_str("\n\n");
+    }
+
+    // Add other non-tool sections
+    for section in other_sections {
+        final_content.push_str(&section);
+        final_content.push_str("\n\n");
+    }
+
+    // Add tool sections last
+    for section in tool_sections {
+        final_content.push_str(&section);
+        final_content.push_str("\n\n");
+    }
+
+    // Remove extra newlines at the end while preserving one final newline
+    let final_content = final_content.trim_end().to_string() + "\n";
+
+    // Write the reordered content back to the file
+    fs::write(&pyproject_path, final_content)
+        .map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_reorder_toml_sections() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_content = r#"[tool.black]
+line-length = 120
+
+[project]
+name = "test-project"
+version = "1.0.0"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 120
+
+[other-section]
+key = "value"
+"#;
+
+        fs::write(temp_dir.path().join("pyproject.toml"), input_content).unwrap();
+
+        reorder_toml_sections(temp_dir.path()).unwrap();
+
+        let result = fs::read_to_string(temp_dir.path().join("pyproject.toml")).unwrap();
+
+        // Verify order of sections
+        let project_pos = result.find("[project]").unwrap();
+        let build_system_pos = result.find("[build-system]").unwrap();
+        let other_section_pos = result.find("[other-section]").unwrap();
+        let tool_black_pos = result.find("[tool.black]").unwrap();
+        let tool_ruff_pos = result.find("[tool.ruff]").unwrap();
+
+        assert!(
+            project_pos < build_system_pos,
+            "project should come before build-system"
+        );
+        assert!(
+            build_system_pos < other_section_pos,
+            "build-system should come before other sections"
+        );
+        assert!(
+            other_section_pos < tool_black_pos,
+            "other sections should come before tool sections"
+        );
+        assert!(
+            tool_black_pos < tool_ruff_pos,
+            "tool sections should be grouped together"
+        );
+    }
+
+    #[test]
+    fn test_preserve_formatting() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_content = r#"[tool.black]
+line-length = 120  # Comment
+target-version = [  # Multi-line
+    "py39",         # With alignment
+    "py310"        # And comments
+]
+
+[project]
+name = "test"  # Project name
+"#;
+
+        fs::write(temp_dir.path().join("pyproject.toml"), input_content).unwrap();
+
+        reorder_toml_sections(temp_dir.path()).unwrap();
+
+        let result = fs::read_to_string(temp_dir.path().join("pyproject.toml")).unwrap();
+
+        // Verify comments and formatting are preserved
+        assert!(result.contains("line-length = 120  # Comment"));
+        assert!(result.contains(
+            r#"target-version = [  # Multi-line
+    "py39",         # With alignment
+    "py310"        # And comments
+]"#
+        ));
+        assert!(result.contains(r#"name = "test"  # Project name"#));
+    }
+
+    #[test]
+    fn test_empty_lines_handling() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_content = r#"[tool.black]
+line-length = 120
+
+# Comment between sections
+
+[project]
+name = "test"
+
+"#;
+
+        fs::write(temp_dir.path().join("pyproject.toml"), input_content).unwrap();
+
+        reorder_toml_sections(temp_dir.path()).unwrap();
+
+        let result = fs::read_to_string(temp_dir.path().join("pyproject.toml")).unwrap();
+
+        // Verify empty lines are preserved within sections
+        assert!(result.contains("\n\n"));
+        assert!(result.ends_with('\n'));
+    }
+}
