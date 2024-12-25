@@ -1,12 +1,12 @@
+use log::debug;
 use std::fs;
 use std::path::Path;
-use log::debug;
 
 /// Clean and validate a version string
 fn clean_version(version: &str) -> Option<String> {
     let mut cleaned = version.trim().to_string();
     let mut prev_len;
-    
+
     // Keep cleaning until no more changes occur
     loop {
         prev_len = cleaned.len();
@@ -17,12 +17,12 @@ fn clean_version(version: &str) -> Option<String> {
             .trim_matches(',')
             .trim()
             .to_string();
-            
+
         if cleaned.len() == prev_len {
             break;
         }
     }
-    
+
     // Basic version validation - should contain at least one number
     if cleaned.chars().any(|c| c.is_ascii_digit()) {
         Some(cleaned)
@@ -74,9 +74,15 @@ fn extract_version_from_setup_py(project_dir: &Path) -> Result<Option<String>, S
 
     // Look for version in setup() call
     if let Some(start_idx) = content.find("setup(") {
-        let bracket_content = crate::migrators::setup_py::SetupPyMigrationSource::extract_setup_content(&content[start_idx..])?;
-        
-        if let Some(version) = crate::migrators::setup_py::SetupPyMigrationSource::extract_parameter(&bracket_content, "version") {
+        let bracket_content =
+            crate::migrators::setup_py::SetupPyMigrationSource::extract_setup_content(
+                &content[start_idx..],
+            )?;
+
+        if let Some(version) = crate::migrators::setup_py::SetupPyMigrationSource::extract_parameter(
+            &bracket_content,
+            "version",
+        ) {
             if let Some(cleaned_version) = clean_version(&version) {
                 return Ok(Some(cleaned_version));
             }
@@ -95,12 +101,16 @@ fn extract_version_from_init_py(project_dir: &Path) -> Result<Option<String>, St
     }
 
     // Then, look for package directories
-    for entry in fs::read_dir(project_dir)
-        .map_err(|e| format!("Failed to read project directory: {}", e))?
+    for entry in
+        fs::read_dir(project_dir).map_err(|e| format!("Failed to read project directory: {}", e))?
     {
         let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
         let path = entry.path();
-        if path.is_dir() && !path.file_name().map_or(true, |n| n.to_string_lossy().starts_with('.')) {
+        if path.is_dir()
+            && !path
+                .file_name()
+                .map_or(true, |n| n.to_string_lossy().starts_with('.'))
+        {
             let init_path = path.join("__init__.py");
             if let Some(version) = extract_version_from_init_file(&init_path)? {
                 return Ok(Some(version));
@@ -188,7 +198,8 @@ mod tests {
             assert_eq!(
                 clean_version(input),
                 expected.map(String::from),
-                "Failed for input: {:?}", input
+                "Failed for input: {:?}",
+                input
             );
         }
     }
@@ -198,7 +209,7 @@ mod tests {
         let temp_dir = create_test_dir();
         let pkg_dir = temp_dir.path().join("my_package");
         fs::create_dir(&pkg_dir).unwrap();
-        
+
         let init_content = r#"
 from .core import something
 
@@ -218,7 +229,7 @@ def setup():
         let temp_dir = create_test_dir();
         let pkg_dir = temp_dir.path().join("my_package");
         fs::create_dir(&pkg_dir).unwrap();
-        
+
         let init_content = "__version__ = '1.2.0'";
         fs::write(pkg_dir.join("__init__.py"), init_content).unwrap();
 
@@ -229,7 +240,7 @@ def setup():
     #[test]
     fn test_extract_version_with_multiple_sources() {
         let temp_dir = create_test_dir();
-        
+
         // Create setup.py with version
         let setup_py_content = r#"
 from setuptools import setup
@@ -260,7 +271,7 @@ setup(
         let temp_dir = create_test_dir();
         let pkg_dir = temp_dir.path().join("my_package");
         fs::create_dir(&pkg_dir).unwrap();
-        
+
         // Create only __init__.py and **version**
         fs::write(pkg_dir.join("__init__.py"), r#"__version__ = "1.2.0""#).unwrap();
         fs::write(temp_dir.path().join("**version**"), "3.0.0\n").unwrap();
@@ -275,9 +286,13 @@ setup(
         let temp_dir = create_test_dir();
         let pkg_dir = temp_dir.path().join("my_package");
         fs::create_dir(&pkg_dir).unwrap();
-        
+
         // Test with invalid version string
-        fs::write(pkg_dir.join("__init__.py"), r#"__version__ = "__version__,""#).unwrap();
+        fs::write(
+            pkg_dir.join("__init__.py"),
+            r#"__version__ = "__version__,""#,
+        )
+        .unwrap();
 
         let version = extract_version(&temp_dir.path()).unwrap();
         assert_eq!(version, None);
@@ -288,7 +303,7 @@ setup(
         let temp_dir = create_test_dir();
         let pkg_dir = temp_dir.path().join("my_package");
         fs::create_dir(&pkg_dir).unwrap();
-        
+
         // Test various combinations of quotes, commas, and comments
         let test_cases = vec![
             r#"__version__ = "1.2.0","#,
@@ -299,12 +314,16 @@ setup(
             r#"__version__ = '1.2.0'  # With spaces and comment"#,
             r#"__version__ = "1.2.0",# No space before comment"#,
         ];
-        
+
         for test_case in test_cases {
             fs::write(pkg_dir.join("__init__.py"), test_case).unwrap();
             let version = extract_version(&temp_dir.path()).unwrap();
-            assert_eq!(version, Some("1.2.0".to_string()), 
-                "Failed for case: {}", test_case);
+            assert_eq!(
+                version,
+                Some("1.2.0".to_string()),
+                "Failed for case: {}",
+                test_case
+            );
             fs::remove_file(pkg_dir.join("__init__.py")).unwrap();
         }
     }
