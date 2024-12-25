@@ -237,6 +237,13 @@ pub fn run_migration(
             update_pyproject_toml(project_dir, &extra_urls)?;
         }
 
+        // Extract and migrate version
+        if let Some(version) = crate::utils::version::extract_version(project_dir)? {
+            info!("Migrating version from setup.py or **version** file");
+            file_tracker.track_file(&pyproject_path)?;
+            crate::utils::pyproject::update_project_version(project_dir, &version)?;
+        }
+
         // Migrate setup.py metadata
         if let Some(description) = SetupPyMigrationSource::extract_description(project_dir)? {
             info!("Migrating description from setup.py");

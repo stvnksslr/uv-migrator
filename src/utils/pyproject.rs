@@ -80,6 +80,22 @@ pub fn update_url(project_dir: &Path, url: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn update_project_version(project_dir: &Path, version: &str) -> Result<(), String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+    let mut doc = read_toml(&pyproject_path)?;
+
+    debug!("Updating project version to {}", version);
+    update_section(
+        &mut doc,
+        &["project", "version"],
+        Item::Value(Value::String(Formatted::new(version.to_string()))),
+    );
+
+    write_toml(&pyproject_path, &mut doc)?;
+    info!("Successfully updated project version");
+    Ok(())
+}
+
 pub fn append_tool_sections(project_dir: &Path) -> Result<(), String> {
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
     let pyproject_path = project_dir.join("pyproject.toml");

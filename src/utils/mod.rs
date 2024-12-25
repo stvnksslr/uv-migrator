@@ -18,3 +18,5 @@ pub use pyproject::update_url;
 pub use update::update;
 pub use uv::check_uv_requirements;
 pub use venv::create_virtual_environment;
+
+pub mod version;
