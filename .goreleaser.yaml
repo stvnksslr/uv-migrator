@@ -10,7 +10,7 @@ builds:
   - builder: rust
     flags:
       - --release
-      - --features self_update
+      - --features=self_update
     targets:
       - x86_64-unknown-linux-gnu
       - x86_64-apple-darwin
@@ -34,4 +34,4 @@ changelog:
 release:
   footer: >-
     ---
-    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+    Released by [GoReleaser](https://
