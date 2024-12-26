@@ -270,11 +270,33 @@ pub fn reorder_toml_sections(project_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// Tests
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// Test the reordering of sections in a TOML file.
+    ///
+    /// This test verifies that:
+    /// 1. Project sections come first
+    /// 2. Build system sections come second
+    /// 3. Other non-tool sections come third
+    /// 4. Tool sections are grouped together at the end
+    /// 5. The relative order of tool sections is preserved
+    ///
+    /// # Test Setup
+    /// Creates a TOML file with sections in mixed order:
+    /// - [tool.black]
+    /// - [project]
+    /// - [build-system]
+    /// - [tool.ruff]
+    /// - [other-section]
+    ///
+    /// # Verification Steps
+    /// 1. Applies the reordering function
+    /// 2. Verifies the position of each section type
+    /// 3. Confirms sections appear in the correct order
     #[test]
     fn test_reorder_toml_sections() {
         let temp_dir = TempDir::new().unwrap();
@@ -295,7 +317,6 @@ line-length = 120
 [other-section]
 key = "value"
 "#;
-
         fs::write(temp_dir.path().join("pyproject.toml"), input_content).unwrap();
 
         reorder_toml_sections(temp_dir.path()).unwrap();
@@ -327,6 +348,26 @@ key = "value"
         );
     }
 
+    /// Test preservation of TOML formatting during section reordering.
+    ///
+    /// This test verifies that:
+    /// 1. Comments are preserved in their original positions
+    /// 2. Multi-line formatting is maintained
+    /// 3. Alignment and indentation are kept intact
+    /// 4. Inline comments remain associated with their values
+    ///
+    /// # Test Setup
+    /// Creates a TOML file with:
+    /// - Inline comments
+    /// - Multi-line array definitions
+    /// - Aligned comments
+    /// - Section-level documentation
+    ///
+    /// # Verification Steps
+    /// 1. Applies the reordering function
+    /// 2. Verifies all comments are preserved
+    /// 3. Confirms multi-line formatting is maintained
+    /// 4. Checks alignment and indentation
     #[test]
     fn test_preserve_formatting() {
         let temp_dir = TempDir::new().unwrap();
@@ -340,7 +381,6 @@ target-version = [  # Multi-line
 [project]
 name = "test"  # Project name
 "#;
-
         fs::write(temp_dir.path().join("pyproject.toml"), input_content).unwrap();
 
         reorder_toml_sections(temp_dir.path()).unwrap();
@@ -358,6 +398,25 @@ name = "test"  # Project name
         assert!(result.contains(r#"name = "test"  # Project name"#));
     }
 
+    /// Test handling of empty lines in TOML file reordering.
+    ///
+    /// This test verifies that:
+    /// 1. Empty lines between sections are properly handled
+    /// 2. Comments between sections are preserved
+    /// 3. The file ends with a newline character
+    /// 4. Section spacing is consistent
+    ///
+    /// # Test Setup
+    /// Creates a TOML file with:
+    /// - Empty lines between sections
+    /// - Comments between sections
+    /// - Multiple blank lines
+    ///
+    /// # Verification Steps
+    /// 1. Applies the reordering function
+    /// 2. Verifies empty lines are preserved
+    /// 3. Confirms proper section spacing
+    /// 4. Checks final newline character
     #[test]
     fn test_empty_lines_handling() {
         let temp_dir = TempDir::new().unwrap();
@@ -370,7 +429,6 @@ line-length = 120
 name = "test"
 
 "#;
-
         fs::write(temp_dir.path().join("pyproject.toml"), input_content).unwrap();
 
         reorder_toml_sections(temp_dir.path()).unwrap();

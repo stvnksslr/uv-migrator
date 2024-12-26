@@ -41,7 +41,6 @@ Package Formats
 Package formats
   🔄 poetry
 
-🔄 PDM support  
 🔄 Pipenv support  
 
 ## Usage
