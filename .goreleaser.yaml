@@ -10,22 +10,23 @@ builds:
   - builder: rust
     flags:
       - --release
-      - -F self_update
+      - --features self_update
     targets:
       - x86_64-unknown-linux-gnu
       - x86_64-apple-darwin
       - aarch64-unknown-linux-gnu
       - aarch64-apple-darwin
+    id: "uv-migrator"
+    binary: uv-migrator
 
 archives:
   - format: tar.gz
+    files:
+      - none*
     name_template: >-
-      {{ .ProjectName }}-
-      {{- if eq .Os "darwin" }}x86_64-apple-darwin
-      {{- else if and (eq .Os "linux") (eq .Arch "amd64") }}x86_64-unknown-linux-gnu
-      {{- else if and (eq .Os "linux") (eq .Arch "arm64") }}aarch64-unknown-linux-gnu
-      {{- else if and (eq .Os "darwin") (eq .Arch "arm64") }}aarch64-apple-darwin
-      {{- else }}{{ .Os }}-{{ .Arch }}{{ end }}
+      {{ .ProjectName }}-{{ .Target }}
+    builds:
+      - uv-migrator
 
 changelog:
   disable: true
