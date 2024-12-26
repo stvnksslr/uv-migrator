@@ -8,66 +8,90 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build - ${{ matrix.target }}
-    permissions:
-      contents: write  # Only needed for release artifact uploads
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    strategy:
-      matrix:
-        include:
-          # Arm
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-22.04
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-22.04
-          - target: aarch64-apple-darwin
-            os: macos-13
-          - target: aarch64-pc-windows-msvc
-            os: windows-2022
-          # x86
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-22.04
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-22.04
-          - target: x86_64-apple-darwin
-            os: macos-13
-          - target: x86_64-pc-windows-msvc
-            os: windows-2022
-
+  goreleaser:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout Git repo
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          fetch-depth: 0
 
-      - name: Set Perl environment variables
-        if: runner.os == 'Windows'
-        run: |
-          echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: Install rust toolchain
-        if: ${{ !contains(matrix.target, 'apple') }}
-        uses: dtolnay/rust-toolchain@stable
-
-      - uses: taiki-e/setup-cross-toolchain-action@v1
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          target: ${{ matrix.target }}
-        if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
-
-      - uses: taiki-e/install-action@cross
-        if: contains(matrix.target, '-musl')
-
-      - run: echo "RUSTFLAGS=${RUSTFLAGS} -C target-feature=+crt-static" >> "${GITHUB_ENV}"
-        if: endsWith(matrix.target, 'windows-msvc')
-
-      - uses: taiki-e/upload-rust-binary-action@v1
+          go-version: stable
+      
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          bin: "uv-migrator"
-          target: ${{ matrix.target }}
-          tar: all
-          zip: windows
-          token: ${{ secrets.GITHUB_TOKEN }}
-          dry-run: false
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+
+  # build:
+  #   name: Build - ${{ matrix.target }}
+  #   permissions:
+  #     contents: write  # Only needed for release artifact uploads
+  #   runs-on: ${{ matrix.os }}
+  #   timeout-minutes: 60
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         # Arm
+  #         - target: aarch64-unknown-linux-gnu
+  #           os: ubuntu-22.04
+  #         - target: aarch64-unknown-linux-musl
+  #           os: ubuntu-22.04
+  #         - target: aarch64-apple-darwin
+  #           os: macos-13
+  #         - target: aarch64-pc-windows-msvc
+  #           os: windows-2022
+  #         # x86
+  #         - target: x86_64-unknown-linux-gnu
+  #           os: ubuntu-22.04
+  #         - target: x86_64-unknown-linux-musl
+  #           os: ubuntu-22.04
+  #         - target: x86_64-apple-darwin
+  #           os: macos-13
+  #         - target: x86_64-pc-windows-msvc
+  #           os: windows-2022
+
+  #   steps:
+  #     - name: Checkout Git repo
+  #       uses: actions/checkout@v4
+  #       with:
+  #         persist-credentials: false
+
+  #     - name: Set Perl environment variables
+  #       if: runner.os == 'Windows'
+  #       run: |
+  #         echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+  #         echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+  #     - name: Install rust toolchain
+  #       if: ${{ !contains(matrix.target, 'apple') }}
+  #       uses: dtolnay/rust-toolchain@stable
+
+  #     - uses: taiki-e/setup-cross-toolchain-action@v1
+  #       with:
+  #         target: ${{ matrix.target }}
+  #       if: startsWith(matrix.os, 'ubuntu') && !contains(matrix.target, '-musl')
+
+  #     - uses: taiki-e/install-action@cross
+  #       if: contains(matrix.target, '-musl')
+
+  #     - run: echo "RUSTFLAGS=${RUSTFLAGS} -C target-feature=+crt-static" >> "${GITHUB_ENV}"
+  #       if: endsWith(matrix.target, 'windows-msvc')
+
+  #     - uses: taiki-e/upload-rust-binary-action@v1
+  #       with:
+  #         bin: "uv-migrator"
+  #         target: ${{ matrix.target }}
+  #         tar: all
+  #         zip: windows
+  #         token: ${{ secrets.GITHUB_TOKEN }}
+  #         dry-run: false

@@ -1,0 +1,31 @@
+version: 2
+
+before:
+  hooks:
+  - rustup default stable
+  - cargo install --locked cargo-zigbuild
+  - cargo fetch --locked
+
+builds:
+- builder: rust
+  flags:
+  - --release
+  targets:
+  # linux
+  - x86_64-unknown-linux-gnu
+  - aarch64-unknown-linux-gnu
+  # macos
+  - x86_64-apple-darwin
+  - aarch64-apple-darwin
+
+archives:
+- format: tar.gz
+  name_template: >-
+    {{ .ProjectName }}_ {{- title .Os }}_ {{- if eq .Arch "amd64" }}x86_64 {{- else if eq .Arch "386" }}i386 {{- else }}{{ .Arch }}{{ end }}
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+    - "^docs:"
+    - "^test:"
