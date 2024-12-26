@@ -6,6 +6,9 @@ before:
     - cargo install --locked cargo-zigbuild
     - cargo fetch --locked
 
+project_name: uv-migrator
+report_sizes: true
+
 builds:
   - builder: rust
     flags:
@@ -18,7 +21,6 @@ builds:
 
 archives:
   - format: tar.gz
-    # this name template makes the OS and Arch compatible with the results of `uname`.
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
