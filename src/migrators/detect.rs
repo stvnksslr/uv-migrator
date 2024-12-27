@@ -2,10 +2,12 @@ use log::info;
 use std::path::Path;
 
 use crate::migrators::poetry::PoetryMigrationSource;
+use crate::migrators::pipenv::PipenvMigrationSource;
 
 #[derive(Debug, PartialEq)]
 pub enum ProjectType {
     Poetry(PoetryProjectType),
+    Pipenv,
     Requirements,
     SetupPy,
 }
@@ -23,17 +25,25 @@ pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType, String> {
         let poetry_type = PoetryMigrationSource::detect_project_type(project_dir)?;
         return Ok(ProjectType::Poetry(poetry_type));
     }
+
+    if PipenvMigrationSource::detect_project_type(project_dir) {
+        info!("Detected Pipenv project");
+        return Ok(ProjectType::Pipenv);
+    }
+
     let setup_py_path = project_dir.join("setup.py");
     if setup_py_path.exists() {
         info!("Detected setuptools project");
         return Ok(ProjectType::SetupPy);
     }
+
     let requirements_files = find_requirements_files(project_dir);
     if !requirements_files.is_empty() {
         info!("Detected project with requirements files");
         return Ok(ProjectType::Requirements);
     }
-    Err("Unable to detect project type. Ensure you have either a pyproject.toml with a [tool.poetry] section, a setup.py file, or requirements.txt file(s).".to_string())
+
+    Err("Unable to detect project type. Ensure you have either a pyproject.toml with a [tool.poetry] section, a Pipfile, a setup.py file, or requirements.txt file(s).".to_string())
 }
 
 /// Parses the contents of a TOML file into a `PyProject` struct.
