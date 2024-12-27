@@ -13,8 +13,8 @@ use std::path::Path;
 
 mod dependency;
 mod detect;
-pub mod poetry;
 pub mod pipenv;
+pub mod poetry;
 pub mod requirements;
 pub mod setup_py;
 

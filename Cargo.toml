@@ -25,6 +25,7 @@ toml = "0.8.19"
 which = "7.0.1"
 semver = "1.0.24"
 toml_edit = "0.22.22"
+serde_json = "1.0.134"
 
 [dev-dependencies]
 tempfile = "3.14.0"

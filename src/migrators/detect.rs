@@ -1,8 +1,8 @@
 use log::info;
 use std::path::Path;
 
-use crate::migrators::poetry::PoetryMigrationSource;
 use crate::migrators::pipenv::PipenvMigrationSource;
+use crate::migrators::poetry::PoetryMigrationSource;
 
 #[derive(Debug, PartialEq)]
 pub enum ProjectType {
