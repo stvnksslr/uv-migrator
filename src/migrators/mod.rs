@@ -13,6 +13,7 @@ use std::path::Path;
 
 mod dependency;
 mod detect;
+pub mod pipenv;
 pub mod poetry;
 pub mod requirements;
 pub mod setup_py;
@@ -205,6 +206,7 @@ pub fn run_migration(
 
         let migration_source: Box<dyn MigrationSource> = match project_type {
             ProjectType::Poetry(_) => Box::new(poetry::PoetryMigrationSource),
+            ProjectType::Pipenv => Box::new(pipenv::PipenvMigrationSource),
             ProjectType::Requirements => Box::new(requirements::RequirementsMigrationSource),
             ProjectType::SetupPy => Box::new(SetupPyMigrationSource),
         };
