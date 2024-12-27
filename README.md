@@ -32,6 +32,7 @@ cargo install uv-migrator
 ✅ Auto Detect Development dependencies  
 ✅ Dependency groups  
 ✅ Custom package indexes  
+✅ Pipenv support
 
 Package Formats  
 ✅ setup.py
@@ -40,7 +41,6 @@ Package Formats
 
 Package formats         
 🔄 poetry package support        
-🔄 Pipenv support  
 
 ## Usage
 
