@@ -29,8 +29,7 @@ cargo install uv-migrator
 ✅ Poetry projects  
 ✅ Pip based projects  
 ✅ Multiple requirements files  
-✅ Auto Detect Development dependencies  
-✅ Dependency groups  
+✅ Auto Detect Development dependencies and Dependency groups  
 ✅ Custom package indexes  
 ✅ Pipenv support
 

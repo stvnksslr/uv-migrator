@@ -2,8 +2,7 @@
 
 use crate::migrators::detect::{PoetryProjectType, ProjectType};
 use crate::utils::{
-    create_virtual_environment, parse_pip_conf, pyproject, update_authors, update_pyproject_toml,
-    update_url, FileTrackerGuard,
+    parse_pip_conf, pyproject, update_authors, update_pyproject_toml, update_url, FileTrackerGuard,
 };
 use log::info;
 use setup_py::SetupPyMigrationSource;
@@ -200,8 +199,7 @@ pub fn run_migration(
     }
 
     let result = (|| {
-        create_virtual_environment()?;
-        let project_type = detect_project_type(project_dir)?;
+        let project_type: ProjectType = detect_project_type(project_dir)?;
         info!("Detected project type: {:?}", project_type);
 
         let migration_source: Box<dyn MigrationSource> = match project_type {

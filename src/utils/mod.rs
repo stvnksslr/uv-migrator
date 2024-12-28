@@ -6,7 +6,6 @@ pub mod toml;
 #[cfg(feature = "self_update")]
 mod update;
 mod uv;
-mod venv;
 
 // Export needed items
 pub use author::update_authors;
@@ -17,6 +16,5 @@ pub use pyproject::update_url;
 #[cfg(feature = "self_update")]
 pub use update::update;
 pub use uv::check_uv_requirements;
-pub use venv::create_virtual_environment;
 
 pub mod version;
