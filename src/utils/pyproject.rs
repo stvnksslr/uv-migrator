@@ -421,6 +421,9 @@ setting = "value"
             .unwrap()
             .as_table()
             .unwrap();
-        assert_eq!(scripts.get("cli").unwrap().as_str().unwrap(), "package.cli:main");
+        assert_eq!(
+            scripts.get("cli").unwrap().as_str().unwrap(),
+            "package.cli:main"
+        );
     }
 }
