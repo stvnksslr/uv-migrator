@@ -27,9 +27,9 @@ cargo install uv-migrator
 ## Currently Supported
 
 ✅ Poetry projects  
-✅ Pip based projects  
+✅ Pip projects  
 ✅ Multiple requirements files  
-✅ Auto Detect Development dependencies and Dependency groups  
+✅ Auto detect development dependencies and dependency groups  
 ✅ Custom package indexes  
 ✅ Pipenv support
 
@@ -40,6 +40,7 @@ Package Formats
 
 Package formats         
 🔄 poetry package support        
+🔄 anaconda projects
 
 ## Usage
 
