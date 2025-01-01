@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.3.1](https://github.com/stvnksslr/uv-migrator/compare/v2025.3.0...v2025.3.1) - 2025-01-01
+
+### Fixed
+- *(clippy)* fixed some clippy warnings (by @stvnksslr)
+
+### Other
+- *(dependencies)* self_update released a needed bump .41 -> 42 (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2025.2.7](https://github.com/stvnksslr/uv-migrator/compare/v2025.2.6...v2025.2.7) - 2024-12-27
 
 ### Added
