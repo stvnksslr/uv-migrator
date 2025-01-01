@@ -266,6 +266,10 @@ pub fn run_migration(
         file_tracker.track_file(&pyproject_path)?;
         pyproject::append_tool_sections(project_dir)?;
 
+        info!("Migrating Poetry scripts");
+        file_tracker.track_file(&pyproject_path)?;
+        pyproject::update_scripts(project_dir)?;
+
         // Reorder TOML sections as the final step
         info!("Reordering pyproject.toml sections");
         file_tracker.track_file(&pyproject_path)?;
