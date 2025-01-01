@@ -127,8 +127,8 @@ impl PipenvMigrationSource {
         // Keep == intact, only clean single =
         if version.starts_with("==") {
             version.to_string()
-        } else if version.starts_with('=') {
-            version[1..].trim().to_string()
+        } else if let Some(stripped) = version.strip_prefix('=') {
+            stripped.trim().to_string()
         } else {
             version.to_string()
         }
