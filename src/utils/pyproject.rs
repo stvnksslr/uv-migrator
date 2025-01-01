@@ -81,16 +81,11 @@ pub fn update_url(project_dir: &Path, url: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn convert_script_format(poetry_script: &str) -> String {
-    // Poetry format: 'package.module:function'
-    // UV format: "package.module:function"
-    poetry_script.trim_matches('\'').to_string()
-}
-
 pub fn migrate_poetry_scripts(doc: &DocumentMut) -> Option<Table> {
     let poetry_scripts = doc.get("tool")?.get("poetry")?.get("scripts")?.as_table()?;
 
     let mut scripts_table = Table::new();
+    scripts_table.set_implicit(true);
 
     for (script_name, script_value) in poetry_scripts.iter() {
         if let Some(script_str) = script_value.as_str() {
@@ -115,15 +110,13 @@ pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
     let content = fs::read_to_string(&pyproject_path)
         .map_err(|e| format!("Failed to read pyproject.toml: {}", e))?;
 
-    let doc = content
+    let mut doc = content
         .parse::<DocumentMut>()
         .map_err(|e| format!("Failed to parse TOML: {}", e))?;
 
     if let Some(scripts_table) = migrate_poetry_scripts(&doc) {
-        let mut new_doc = doc.clone();
-
         // Remove old poetry scripts section
-        if let Some(tool) = new_doc.get_mut("tool") {
+        if let Some(tool) = doc.get_mut("tool") {
             if let Some(poetry) = tool.get_mut("poetry") {
                 if let Some(table) = poetry.as_table_mut() {
                     table.remove("scripts");
@@ -131,18 +124,24 @@ pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
             }
         }
 
-        // Add new scripts section
+        // Add new scripts section under project
         update_section(
-            &mut new_doc,
+            &mut doc,
             &["project", "scripts"],
             Item::Table(scripts_table),
         );
 
-        write_toml(&pyproject_path, &mut new_doc)?;
+        write_toml(&pyproject_path, &mut doc)?;
         info!("Successfully migrated Poetry scripts to UV format");
     }
 
     Ok(())
+}
+
+fn convert_script_format(poetry_script: &str) -> String {
+    // Poetry format: 'package.module:function'
+    // UV format: "package.module:function"
+    poetry_script.trim_matches('\'').to_string()
 }
 
 pub fn update_project_version(project_dir: &Path, version: &str) -> Result<(), String> {
@@ -212,11 +211,9 @@ pub fn append_tool_sections(project_dir: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
+    use std::path::PathBuf;
     use tempfile::TempDir;
-    use toml_edit::DocumentMut;
 
     fn create_test_pyproject(content: &str) -> (TempDir, PathBuf) {
         let temp_dir = TempDir::new().unwrap();
@@ -243,14 +240,14 @@ serve = "my_package.server:run_server"
         let new_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
         let doc = new_content.parse::<DocumentMut>().unwrap();
 
+        // Verify old scripts section is removed
         assert!(doc
             .get("tool")
-            .unwrap()
-            .get("poetry")
-            .unwrap()
-            .get("scripts")
+            .and_then(|t| t.get("poetry"))
+            .and_then(|p| p.get("scripts"))
             .is_none());
 
+        // Verify new scripts section is added
         let scripts = doc
             .get("project")
             .unwrap()
@@ -415,5 +412,15 @@ setting = "value"
                 .unwrap(),
             "value"
         );
+
+        // Verify scripts migrated correctly
+        let scripts = doc
+            .get("project")
+            .unwrap()
+            .get("scripts")
+            .unwrap()
+            .as_table()
+            .unwrap();
+        assert_eq!(scripts.get("cli").unwrap().as_str().unwrap(), "package.cli:main");
     }
 }
