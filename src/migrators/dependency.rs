@@ -1,4 +1,3 @@
-// migrators/dependency.rs
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
 pub enum DependencyType {
     Main,

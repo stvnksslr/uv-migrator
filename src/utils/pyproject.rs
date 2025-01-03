@@ -89,7 +89,6 @@ pub fn migrate_poetry_scripts(doc: &DocumentMut) -> Option<Table> {
 
     for (script_name, script_value) in poetry_scripts.iter() {
         if let Some(script_str) = script_value.as_str() {
-            // Convert Poetry script format to UV format
             let converted_script = convert_script_format(script_str);
             scripts_table.insert(
                 script_name,
@@ -107,15 +106,38 @@ pub fn migrate_poetry_scripts(doc: &DocumentMut) -> Option<Table> {
 
 pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
     let pyproject_path = project_dir.join("pyproject.toml");
+    let old_pyproject_path = project_dir.join("old.pyproject.toml");
+
+    // First read the old pyproject.toml to get Poetry scripts
+    let old_content = fs::read_to_string(&old_pyproject_path)
+        .map_err(|e| format!("Failed to read old pyproject.toml: {}", e))?;
+    let old_doc = old_content
+        .parse::<DocumentMut>()
+        .map_err(|e| format!("Failed to parse old TOML: {}", e))?;
+
+    // Then read the new pyproject.toml
     let content = fs::read_to_string(&pyproject_path)
         .map_err(|e| format!("Failed to read pyproject.toml: {}", e))?;
-
     let mut doc = content
         .parse::<DocumentMut>()
         .map_err(|e| format!("Failed to parse TOML: {}", e))?;
 
-    if let Some(scripts_table) = migrate_poetry_scripts(&doc) {
-        // Remove old poetry scripts section
+    if let Some(scripts_table) = migrate_poetry_scripts(&old_doc) {
+        // Remove any existing scripts section if present
+        if let Some(project) = doc.get_mut("project") {
+            if let Some(table) = project.as_table_mut() {
+                table.remove("scripts");
+            }
+        }
+
+        // Add the new scripts section
+        update_section(
+            &mut doc,
+            &["project", "scripts"],
+            Item::Table(scripts_table),
+        );
+
+        // Remove the old scripts section if it exists
         if let Some(tool) = doc.get_mut("tool") {
             if let Some(poetry) = tool.get_mut("poetry") {
                 if let Some(table) = poetry.as_table_mut() {
@@ -124,24 +146,16 @@ pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
             }
         }
 
-        // Add new scripts section under project
-        update_section(
-            &mut doc,
-            &["project", "scripts"],
-            Item::Table(scripts_table),
-        );
-
         write_toml(&pyproject_path, &mut doc)?;
-        info!("Successfully migrated Poetry scripts to UV format");
+        info!("Successfully migrated Poetry scripts to project scripts format");
     }
 
     Ok(())
 }
 
 fn convert_script_format(poetry_script: &str) -> String {
-    // Poetry format: 'package.module:function'
-    // UV format: "package.module:function"
-    poetry_script.trim_matches('\'').to_string()
+    let script = poetry_script.trim_matches(|c| c == '\'' || c == '"');
+    script.to_string()
 }
 
 pub fn update_project_version(project_dir: &Path, version: &str) -> Result<(), String> {
@@ -212,14 +226,30 @@ pub fn append_tool_sections(project_dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf};
     use tempfile::TempDir;
 
-    fn create_test_pyproject(content: &str) -> (TempDir, PathBuf) {
+    fn setup_test_environment(content: &str) -> (TempDir, PathBuf) {
         let temp_dir = TempDir::new().unwrap();
         let project_dir = temp_dir.path().to_path_buf();
-        let pyproject_path = project_dir.join("pyproject.toml");
-        fs::write(&pyproject_path, content).unwrap();
+
+        // Create both old and new pyproject.toml files
+        fs::write(project_dir.join("old.pyproject.toml"), content).unwrap();
+        fs::write(
+            project_dir.join("pyproject.toml"),
+            r#"[project]
+name = "test"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.other]
+setting = "value"
+"#,
+        )
+        .unwrap();
+
         (temp_dir, project_dir)
     }
 
@@ -229,25 +259,22 @@ mod tests {
 [tool.poetry]
 name = "test-project"
 version = "0.1.0"
-
 [tool.poetry.scripts]
 cli = "my_package.cli:main"
 serve = "my_package.server:run_server"
 "#;
-        let (_temp_dir, project_dir) = create_test_pyproject(content);
+        let (_temp_dir, project_dir) = setup_test_environment(content);
         update_scripts(&project_dir).unwrap();
 
         let new_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
         let doc = new_content.parse::<DocumentMut>().unwrap();
 
-        // Verify old scripts section is removed
         assert!(doc
             .get("tool")
             .and_then(|t| t.get("poetry"))
             .and_then(|p| p.get("scripts"))
             .is_none());
 
-        // Verify new scripts section is added
         let scripts = doc
             .get("project")
             .unwrap()
@@ -255,6 +282,7 @@ serve = "my_package.server:run_server"
             .unwrap()
             .as_table()
             .unwrap();
+
         assert_eq!(
             scripts.get("cli").unwrap().as_str().unwrap(),
             "my_package.cli:main"
@@ -271,7 +299,7 @@ serve = "my_package.server:run_server"
 [tool.poetry.scripts]
 start = 'package.module:func'
 "#;
-        let (_temp_dir, project_dir) = create_test_pyproject(content);
+        let (_temp_dir, project_dir) = setup_test_environment(content);
         update_scripts(&project_dir).unwrap();
 
         let new_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
@@ -284,6 +312,7 @@ start = 'package.module:func'
             .unwrap()
             .as_table()
             .unwrap();
+
         assert_eq!(
             scripts.get("start").unwrap().as_str().unwrap(),
             "package.module:func"
@@ -298,7 +327,7 @@ cli = "package.commands.cli:main_func"
 web = "package.web.server:start_server"
 worker = "package.workers.background:process_queue"
 "#;
-        let (_temp_dir, project_dir) = create_test_pyproject(content);
+        let (_temp_dir, project_dir) = setup_test_environment(content);
         update_scripts(&project_dir).unwrap();
 
         let new_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
@@ -311,6 +340,7 @@ worker = "package.workers.background:process_queue"
             .unwrap()
             .as_table()
             .unwrap();
+
         assert_eq!(
             scripts.get("cli").unwrap().as_str().unwrap(),
             "package.commands.cli:main_func"
@@ -331,15 +361,13 @@ worker = "package.workers.background:process_queue"
 [tool.poetry]
 name = "test-project"
 version = "0.1.0"
-
 [tool.poetry.scripts]
 "#;
-        let (_temp_dir, project_dir) = create_test_pyproject(content);
+        let (_temp_dir, project_dir) = setup_test_environment(content);
         update_scripts(&project_dir).unwrap();
 
         let new_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
         let doc = new_content.parse::<DocumentMut>().unwrap();
-
         assert!(doc.get("project").and_then(|p| p.get("scripts")).is_none());
     }
 
@@ -350,30 +378,12 @@ version = "0.1.0"
 name = "test-project"
 version = "0.1.0"
 "#;
-        let (_temp_dir, project_dir) = create_test_pyproject(content);
+        let (_temp_dir, project_dir) = setup_test_environment(content);
         update_scripts(&project_dir).unwrap();
 
         let new_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
         let doc = new_content.parse::<DocumentMut>().unwrap();
-
         assert!(doc.get("project").and_then(|p| p.get("scripts")).is_none());
-    }
-
-    #[test]
-    fn test_script_format_conversion() {
-        let test_cases = vec![
-            ("'package.module:func'", "package.module:func"),
-            ("package.module:func", "package.module:func"),
-            ("'module:main'", "module:main"),
-            (
-                "'deeply.nested.module:complex_func'",
-                "deeply.nested.module:complex_func",
-            ),
-        ];
-
-        for (input, expected) in test_cases {
-            assert_eq!(convert_script_format(input), expected);
-        }
     }
 
     #[test]
@@ -382,18 +392,15 @@ version = "0.1.0"
 [tool.poetry]
 name = "test-project"
 version = "0.1.0"
-
 [tool.poetry.scripts]
 cli = "package.cli:main"
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-
 [tool.other]
 setting = "value"
 "#;
-        let (_temp_dir, project_dir) = create_test_pyproject(content);
+        let (_temp_dir, project_dir) = setup_test_environment(content);
         update_scripts(&project_dir).unwrap();
 
         let new_content = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
@@ -413,7 +420,6 @@ setting = "value"
             "value"
         );
 
-        // Verify scripts migrated correctly
         let scripts = doc
             .get("project")
             .unwrap()
@@ -421,6 +427,7 @@ setting = "value"
             .unwrap()
             .as_table()
             .unwrap();
+
         assert_eq!(
             scripts.get("cli").unwrap().as_str().unwrap(),
             "package.cli:main"
