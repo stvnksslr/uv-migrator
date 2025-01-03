@@ -1,0 +1,30 @@
+repos:
+  - repo: local
+    hooks:
+      - id: lint
+        name: cargo-clippy
+        entry: cargo
+        args:
+          - clippy
+        language: system
+        types: [rust]
+        pass_filenames: false
+        always_run: true
+      - id: format
+        name: cargo-format
+        entry: cargo
+        args:
+          - fmt
+        language: system
+        types: [rust]
+        pass_filenames: false
+        always_run: true
+      - id: test
+        name: cargo-test
+        entry: cargo
+        args:
+          - test
+        language: system
+        types: [rust]
+        pass_filenames: false
+        always_run: true

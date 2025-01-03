@@ -1,5 +1,3 @@
-// src/migrators/mod.rs
-
 use crate::migrators::detect::{PoetryProjectType, ProjectType};
 use crate::utils::{
     parse_pip_conf, pyproject, update_authors, update_pyproject_toml, update_url, FileTrackerGuard,
@@ -263,6 +261,7 @@ pub fn run_migration(
             update_url(project_dir, &project_url)?;
         }
 
+        // Migrating Tool Section
         file_tracker.track_file(&pyproject_path)?;
         pyproject::append_tool_sections(project_dir)?;
 
