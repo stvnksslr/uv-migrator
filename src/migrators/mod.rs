@@ -27,7 +27,7 @@ pub trait MigrationTool {
         &self,
         project_dir: &Path,
         file_tracker: &mut FileTrackerGuard,
-        project_type: ProjectType,
+        project_type: &ProjectType,
     ) -> Result<(), String>;
 
     fn add_dependencies(
@@ -44,7 +44,7 @@ impl MigrationTool for UvTool {
         &self,
         project_dir: &Path,
         file_tracker: &mut FileTrackerGuard,
-        project_type: ProjectType,
+        project_type: &ProjectType,
     ) -> Result<(), String> {
         let pyproject_path = project_dir.join("pyproject.toml");
         let backup_path = project_dir.join("old.pyproject.toml");
@@ -58,7 +58,7 @@ impl MigrationTool for UvTool {
 
         let is_package = matches!(
             project_type,
-            ProjectType::Poetry(PoetryProjectType::Package) | ProjectType::SetupPy
+            &ProjectType::Poetry(PoetryProjectType::Package) | &ProjectType::SetupPy
         );
 
         info!(
@@ -216,7 +216,7 @@ pub fn run_migration(
         }
 
         let migration_tool = UvTool;
-        migration_tool.prepare_project(project_dir, &mut file_tracker, project_type)?;
+        migration_tool.prepare_project(project_dir, &mut file_tracker, &project_type)?;
         info!("Updating project metadata");
 
         migration_tool.add_dependencies(project_dir, &dependencies)?;
@@ -239,7 +239,7 @@ pub fn run_migration(
         if let Some(version) = crate::utils::version::extract_version(project_dir)? {
             info!("Migrating version from setup.py or **version** file");
             file_tracker.track_file(&pyproject_path)?;
-            crate::utils::pyproject::update_project_version(project_dir, &version)?;
+            pyproject::update_project_version(project_dir, &version)?;
         }
 
         // Migrate setup.py metadata
@@ -249,19 +249,26 @@ pub fn run_migration(
             pyproject::update_description(project_dir, &description)?;
         }
 
-        // Migrate authors from setup.py
         info!("Migrating authors from setup.py");
         file_tracker.track_file(&pyproject_path)?;
         update_authors(project_dir)?;
 
-        // Migrate URL from setup.py
         info!("Migrating URL from setup.py");
         let url = SetupPyMigrationSource::extract_url(project_dir)?;
         if let Some(project_url) = url {
             update_url(project_dir, &project_url)?;
         }
 
-        // Migrating Tool Section
+        if let ProjectType::Poetry(_) = project_type {
+            info!("Checking for Poetry package sources to migrate");
+            let sources = pyproject::extract_poetry_sources(project_dir)?;
+            if !sources.is_empty() {
+                file_tracker.track_file(&pyproject_path)?;
+                pyproject::update_uv_indices(project_dir, &sources)?;
+            }
+        }
+
+        info!("Migrating Tool sections");
         file_tracker.track_file(&pyproject_path)?;
         pyproject::append_tool_sections(project_dir)?;
 
@@ -269,12 +276,10 @@ pub fn run_migration(
         file_tracker.track_file(&pyproject_path)?;
         pyproject::update_scripts(project_dir)?;
 
-        // Reorder TOML sections as the final step
         info!("Reordering pyproject.toml sections");
         file_tracker.track_file(&pyproject_path)?;
         crate::utils::toml::reorder_toml_sections(project_dir)?;
 
-        // Remove unwanted files such as the default hello.py
         if hello_py_path.exists() {
             fs::remove_file(&hello_py_path)
                 .map_err(|e| format!("Failed to delete hello.py: {}", e))?;
