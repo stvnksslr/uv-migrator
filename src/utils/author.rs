@@ -1,7 +1,7 @@
 use crate::migrators::setup_py::SetupPyMigrationSource;
 use crate::utils::toml::{read_toml, update_section, write_toml};
 use std::path::Path;
-use toml_edit::{Array, Formatted, Item, Value};
+use toml_edit::{Array, DocumentMut, Formatted, Item, Value};
 
 #[derive(Debug)]
 pub struct Author {
@@ -33,8 +33,66 @@ pub fn extract_authors_from_setup_py(project_dir: &Path) -> Result<Vec<Author>, 
     Ok(authors)
 }
 
+pub fn extract_authors_from_poetry(project_dir: &Path) -> Result<Vec<Author>, String> {
+    let old_pyproject_path = project_dir.join("old.pyproject.toml");
+    if !old_pyproject_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let content = std::fs::read_to_string(&old_pyproject_path)
+        .map_err(|e| format!("Failed to read old.pyproject.toml: {}", e))?;
+
+    let doc = content
+        .parse::<DocumentMut>()
+        .map_err(|e| format!("Failed to parse TOML: {}", e))?;
+
+    // Get poetry section from the TOML document
+    let poetry = doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .ok_or_else(|| "No [tool.poetry] section found".to_string())?;
+
+    // Get authors array
+    let authors = match poetry.get("authors") {
+        Some(array) => {
+            let mut result = Vec::new();
+            if let Some(arr) = array.as_array() {
+                for value in arr.iter() {
+                    if let Some(author_str) = value.as_str() {
+                        result.push(parse_author_string(author_str));
+                    }
+                }
+            }
+            result
+        }
+        None => vec![],
+    };
+
+    Ok(authors)
+}
+
+fn parse_author_string(author_str: &str) -> Author {
+    let author_str = author_str.trim();
+
+    // Pattern match for email between angle brackets
+    let (name, email) = match (author_str.rfind('<'), author_str.rfind('>')) {
+        (Some(start), Some(end)) if start < end => {
+            let name = author_str[..start].trim().to_string();
+            let email = author_str[start + 1..end].trim().to_string();
+            (name, Some(email))
+        }
+        _ => (author_str.to_string(), None),
+    };
+
+    Author { name, email }
+}
+
 pub fn update_authors(project_dir: &Path) -> Result<(), String> {
-    let authors = extract_authors_from_setup_py(project_dir)?;
+    let mut authors = extract_authors_from_poetry(project_dir)?;
+    if authors.is_empty() {
+        authors = extract_authors_from_setup_py(project_dir)?;
+    }
+
     if authors.is_empty() {
         return Ok(());
     }
