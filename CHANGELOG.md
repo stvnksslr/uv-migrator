@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.3.4](https://github.com/stvnksslr/uv-migrator/compare/v2025.3.3...v2025.3.4) - 2025-01-07
+
+### Added
+- *(poetry authors)* solves issue #49, support for migrating authors was only for setup.py but now supports poetry properly as well (by @stvnksslr)
+
+### Other
+- *(poetry indexes)* there was an order of operations bug that was filtering the indexes out before they could be migrated introduced in a recent version, this fixes it and also fixes #50 (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2025.3.3](https://github.com/stvnksslr/uv-migrator/compare/v2025.3.2...v2025.3.3) - 2025-01-03
 
 ### Other
