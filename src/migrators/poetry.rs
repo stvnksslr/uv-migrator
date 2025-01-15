@@ -15,16 +15,16 @@ impl PoetryMigrationSource {
 
         if let Some(tool) = doc.get("tool") {
             if let Some(poetry) = tool.get("poetry") {
-                // Check if packages configuration exists and includes "src"
+                // Use is_some_and for more idiomatic code
                 let is_package = poetry
                     .get("packages")
                     .and_then(|packages| packages.as_array())
-                    .map_or(false, |packages| {
+                    .is_some_and(|packages| {
                         packages.iter().any(|pkg| {
                             pkg.as_inline_table()
                                 .and_then(|t| t.get("include"))
                                 .and_then(|i| i.as_str())
-                                .map_or(false, |include| include == "src")
+                                == Some("src")
                         })
                     });
 
