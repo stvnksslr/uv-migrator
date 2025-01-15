@@ -202,7 +202,7 @@ pub fn append_tool_sections(project_dir: &Path) -> Result<(), String> {
             for (section_name, section_value) in tool_table.iter() {
                 if section_name != "poetry"
                     && !existing_sections.contains(&section_name.to_string())
-                    && !section_value.as_table().map_or(false, |t| t.is_empty())
+                    && !section_value.as_table().is_some_and(|t| t.is_empty())
                 {
                     debug!("Copying tool section: {}", section_name);
                     update_section(&mut new_doc, &["tool", section_name], section_value.clone());

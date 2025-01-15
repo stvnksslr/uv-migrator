@@ -1,7 +1,6 @@
 use crate::migrators::setup_py::SetupPyMigrationSource;
-use crate::utils::toml::{read_toml, update_section, write_toml};
 use std::path::Path;
-use toml_edit::{Array, DocumentMut, Formatted, Item, Value};
+use toml_edit::DocumentMut;
 
 #[derive(Debug)]
 pub struct Author {
@@ -85,37 +84,4 @@ fn parse_author_string(author_str: &str) -> Author {
     };
 
     Author { name, email }
-}
-
-pub fn update_authors(project_dir: &Path) -> Result<(), String> {
-    let mut authors = extract_authors_from_poetry(project_dir)?;
-    if authors.is_empty() {
-        authors = extract_authors_from_setup_py(project_dir)?;
-    }
-
-    if authors.is_empty() {
-        return Ok(());
-    }
-
-    let pyproject_path = project_dir.join("pyproject.toml");
-    let mut doc = read_toml(&pyproject_path)?;
-
-    let mut authors_array = Array::new();
-    for author in &authors {
-        let mut table = toml_edit::InlineTable::new();
-        table.insert("name", Value::String(Formatted::new(author.name.clone())));
-        if let Some(ref email) = author.email {
-            table.insert("email", Value::String(Formatted::new(email.clone())));
-        }
-        authors_array.push(Value::InlineTable(table));
-    }
-
-    update_section(
-        &mut doc,
-        &["project", "authors"],
-        Item::Value(Value::Array(authors_array)),
-    );
-
-    write_toml(&pyproject_path, &mut doc)?;
-    Ok(())
 }

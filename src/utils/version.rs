@@ -220,7 +220,7 @@ def setup():
 "#;
         fs::write(pkg_dir.join("__init__.py"), init_content).unwrap();
 
-        let version = extract_version(&temp_dir.path()).unwrap();
+        let version = extract_version(temp_dir.path()).unwrap();
         assert_eq!(version, Some("1.2.0".to_string()));
     }
 
@@ -233,7 +233,7 @@ def setup():
         let init_content = "__version__ = '1.2.0'";
         fs::write(pkg_dir.join("__init__.py"), init_content).unwrap();
 
-        let version = extract_version(&temp_dir.path()).unwrap();
+        let version = extract_version(temp_dir.path()).unwrap();
         assert_eq!(version, Some("1.2.0".to_string()));
     }
 
@@ -262,7 +262,7 @@ setup(
         fs::write(temp_dir.path().join("**version**"), "3.0.0\n").unwrap();
 
         // Should prefer setup.py version
-        let version = extract_version(&temp_dir.path()).unwrap();
+        let version = extract_version(temp_dir.path()).unwrap();
         assert_eq!(version, Some("2.0.0".to_string()));
     }
 
@@ -277,7 +277,7 @@ setup(
         fs::write(temp_dir.path().join("**version**"), "3.0.0\n").unwrap();
 
         // Should prefer __init__.py version when setup.py is absent
-        let version = extract_version(&temp_dir.path()).unwrap();
+        let version = extract_version(temp_dir.path()).unwrap();
         assert_eq!(version, Some("1.2.0".to_string()));
     }
 
@@ -294,7 +294,7 @@ setup(
         )
         .unwrap();
 
-        let version = extract_version(&temp_dir.path()).unwrap();
+        let version = extract_version(temp_dir.path()).unwrap();
         assert_eq!(version, None);
     }
 
@@ -317,7 +317,7 @@ setup(
 
         for test_case in test_cases {
             fs::write(pkg_dir.join("__init__.py"), test_case).unwrap();
-            let version = extract_version(&temp_dir.path()).unwrap();
+            let version = extract_version(temp_dir.path()).unwrap();
             assert_eq!(
                 version,
                 Some("1.2.0".to_string()),

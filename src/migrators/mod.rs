@@ -1,12 +1,17 @@
 use crate::migrators::detect::{PoetryProjectType, ProjectType};
 use crate::utils::{
-    parse_pip_conf, pyproject, update_authors, update_pyproject_toml, update_url, FileTrackerGuard,
+    author::extract_authors_from_poetry,
+    author::extract_authors_from_setup_py,
+    parse_pip_conf, pyproject,
+    toml::{read_toml, update_section, write_toml},
+    update_pyproject_toml, update_url, FileTrackerGuard,
 };
 use log::info;
 use setup_py::SetupPyMigrationSource;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use toml_edit::{Array, Formatted, Item, Value};
 
 mod dependency;
 mod detect;
@@ -191,6 +196,7 @@ pub fn run_migration(
     let mut file_tracker = FileTrackerGuard::new();
     let hello_py_path = project_dir.join("hello.py");
     let pyproject_path = project_dir.join("pyproject.toml");
+    let old_pyproject_path = project_dir.join("old.pyproject.toml");
 
     if hello_py_path.exists() {
         file_tracker.track_file(&hello_py_path)?;
@@ -200,6 +206,7 @@ pub fn run_migration(
         let project_type: ProjectType = detect_project_type(project_dir)?;
         info!("Detected project type: {:?}", project_type);
 
+        // Extract dependencies based on project type
         let migration_source: Box<dyn MigrationSource> = match project_type {
             ProjectType::Poetry(_) => Box::new(poetry::PoetryMigrationSource),
             ProjectType::Pipenv => Box::new(pipenv::PipenvMigrationSource),
@@ -215,71 +222,38 @@ pub fn run_migration(
             info!("Merged all dependency groups into dev dependencies");
         }
 
+        // Initialize UV project
         let migration_tool = UvTool;
         migration_tool.prepare_project(project_dir, &mut file_tracker, &project_type)?;
-        info!("Updating project metadata");
+        info!("Project initialized with UV");
 
+        // Add dependencies
         migration_tool.add_dependencies(project_dir, &dependencies)?;
+        info!("Dependencies added successfully");
 
+        // Track pyproject.toml for potential updates
         file_tracker.track_file(&pyproject_path)?;
-        update_pyproject_toml(project_dir, &[])?;
 
-        let mut extra_urls = Vec::new();
-        if import_global_pip_conf {
-            extra_urls.extend(parse_pip_conf()?);
-        }
-        extra_urls.extend(additional_index_urls.iter().cloned());
-
-        if !extra_urls.is_empty() {
-            file_tracker.track_file(&pyproject_path)?;
-            update_pyproject_toml(project_dir, &extra_urls)?;
-        }
-
-        // Extract and migrate version
-        if let Some(version) = crate::utils::version::extract_version(project_dir)? {
-            info!("Migrating version from setup.py or **version** file");
-            file_tracker.track_file(&pyproject_path)?;
-            pyproject::update_project_version(project_dir, &version)?;
-        }
-
-        // Migrate setup.py metadata
-        if let Some(description) = SetupPyMigrationSource::extract_description(project_dir)? {
-            info!("Migrating description from setup.py");
-            file_tracker.track_file(&pyproject_path)?;
-            pyproject::update_description(project_dir, &description)?;
-        }
-
-        info!("Migrating authors from setup.py");
-        file_tracker.track_file(&pyproject_path)?;
-        update_authors(project_dir)?;
-
-        info!("Migrating URL from setup.py");
-        let url = SetupPyMigrationSource::extract_url(project_dir)?;
-        if let Some(project_url) = url {
-            update_url(project_dir, &project_url)?;
-        }
-
-        if let ProjectType::Poetry(_) = project_type {
-            info!("Checking for Poetry package sources to migrate");
-            let sources = pyproject::extract_poetry_sources(project_dir)?;
-            if !sources.is_empty() {
-                file_tracker.track_file(&pyproject_path)?;
-                pyproject::update_uv_indices(project_dir, &sources)?;
+        if old_pyproject_path.exists() {
+            match project_type {
+                ProjectType::Poetry(_) => perform_poetry_migration(project_dir, &mut file_tracker)?,
+                ProjectType::SetupPy => perform_setup_py_migration(project_dir, &mut file_tracker)?,
+                ProjectType::Pipenv => perform_pipenv_migration(project_dir, &mut file_tracker)?,
+                ProjectType::Requirements => {
+                    perform_requirements_migration(project_dir, &mut file_tracker)?
+                }
             }
         }
 
-        info!("Migrating Tool sections");
-        file_tracker.track_file(&pyproject_path)?;
-        pyproject::append_tool_sections(project_dir)?;
+        // Perform common migrations
+        perform_common_migrations(
+            project_dir,
+            &mut file_tracker,
+            import_global_pip_conf,
+            additional_index_urls,
+        )?;
 
-        info!("Migrating Poetry scripts");
-        file_tracker.track_file(&pyproject_path)?;
-        pyproject::update_scripts(project_dir)?;
-
-        info!("Reordering pyproject.toml sections");
-        file_tracker.track_file(&pyproject_path)?;
-        crate::utils::toml::reorder_toml_sections(project_dir)?;
-
+        // Cleanup
         if hello_py_path.exists() {
             fs::remove_file(&hello_py_path)
                 .map_err(|e| format!("Failed to delete hello.py: {}", e))?;
@@ -309,4 +283,178 @@ pub fn run_migration(
     }
 
     result
+}
+
+fn perform_poetry_migration(
+    project_dir: &Path,
+    file_tracker: &mut FileTrackerGuard,
+) -> Result<(), String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+
+    info!("Checking for Poetry package sources to migrate");
+    let sources = pyproject::extract_poetry_sources(project_dir)?;
+    if !sources.is_empty() {
+        file_tracker.track_file(&pyproject_path)?;
+        pyproject::update_uv_indices(project_dir, &sources)?;
+    }
+
+    info!("Migrating Poetry authors");
+    let poetry_authors = extract_authors_from_poetry(project_dir)?;
+    if !poetry_authors.is_empty() {
+        file_tracker.track_file(&pyproject_path)?;
+        let mut doc = read_toml(&pyproject_path)?;
+        let mut authors_array = Array::new();
+        for author in &poetry_authors {
+            let mut table = toml_edit::InlineTable::new();
+            table.insert("name", Value::String(Formatted::new(author.name.clone())));
+            if let Some(ref email) = author.email {
+                table.insert("email", Value::String(Formatted::new(email.clone())));
+            }
+            authors_array.push(Value::InlineTable(table));
+        }
+        update_section(
+            &mut doc,
+            &["project", "authors"],
+            Item::Value(Value::Array(authors_array)),
+        );
+        write_toml(&pyproject_path, &mut doc)?;
+    }
+
+    info!("Migrating Poetry scripts");
+    file_tracker.track_file(&pyproject_path)?;
+    pyproject::update_scripts(project_dir)?;
+
+    Ok(())
+}
+
+fn perform_setup_py_migration(
+    project_dir: &Path,
+    file_tracker: &mut FileTrackerGuard,
+) -> Result<(), String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+
+    info!("Migrating metadata from setup.py");
+    if let Some(description) = SetupPyMigrationSource::extract_description(project_dir)? {
+        file_tracker.track_file(&pyproject_path)?;
+        pyproject::update_description(project_dir, &description)?;
+    }
+
+    info!("Migrating URL from setup.py");
+    if let Some(project_url) = SetupPyMigrationSource::extract_url(project_dir)? {
+        file_tracker.track_file(&pyproject_path)?;
+        update_url(project_dir, &project_url)?;
+    }
+
+    info!("Migrating authors from setup.py");
+    let setup_py_authors = extract_authors_from_setup_py(project_dir)?;
+    if !setup_py_authors.is_empty() {
+        file_tracker.track_file(&pyproject_path)?;
+        let mut doc = read_toml(&pyproject_path)?;
+        let mut authors_array = Array::new();
+        for author in &setup_py_authors {
+            let mut table = toml_edit::InlineTable::new();
+            table.insert("name", Value::String(Formatted::new(author.name.clone())));
+            if let Some(ref email) = author.email {
+                table.insert("email", Value::String(Formatted::new(email.clone())));
+            }
+            authors_array.push(Value::InlineTable(table));
+        }
+        update_section(
+            &mut doc,
+            &["project", "authors"],
+            Item::Value(Value::Array(authors_array)),
+        );
+        write_toml(&pyproject_path, &mut doc)?;
+    }
+
+    Ok(())
+}
+
+fn perform_pipenv_migration(
+    project_dir: &Path,
+    file_tracker: &mut FileTrackerGuard,
+) -> Result<(), String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+
+    if let Ok(content) = std::fs::read_to_string(project_dir.join("Pipfile")) {
+        if content.contains("[scripts]") {
+            info!("Migrating Pipfile scripts");
+            file_tracker.track_file(&pyproject_path)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn perform_requirements_migration(
+    project_dir: &Path,
+    file_tracker: &mut FileTrackerGuard,
+) -> Result<(), String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+
+    let requirements_source = requirements::RequirementsMigrationSource;
+    let req_files = requirements_source.find_requirements_files(project_dir);
+
+    for (file_path, _dep_type) in req_files {
+        if let Some(file_name) = file_path.file_name().and_then(|n| n.to_str()) {
+            match file_name {
+                "requirements.txt" => {
+                    continue;
+                }
+                "requirements-dev.txt" => {
+                    continue;
+                }
+                _ => {
+                    if let Some(_group_name) = file_name
+                        .strip_prefix("requirements-")
+                        .and_then(|n| n.strip_suffix(".txt"))
+                    {
+                        info!("Configuring group from requirements file: {}", file_name);
+                        file_tracker.track_file(&pyproject_path)?;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn perform_common_migrations(
+    project_dir: &Path,
+    file_tracker: &mut FileTrackerGuard,
+    import_global_pip_conf: bool,
+    additional_index_urls: &[String],
+) -> Result<(), String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+
+    file_tracker.track_file(&pyproject_path)?;
+    update_pyproject_toml(project_dir, &[])?;
+
+    if let Some(version) = crate::utils::version::extract_version(project_dir)? {
+        info!("Migrating version from setup.py");
+        file_tracker.track_file(&pyproject_path)?;
+        pyproject::update_project_version(project_dir, &version)?;
+    }
+
+    let mut extra_urls = Vec::new();
+    if import_global_pip_conf {
+        extra_urls.extend(parse_pip_conf()?);
+    }
+    extra_urls.extend(additional_index_urls.iter().cloned());
+
+    if !extra_urls.is_empty() {
+        file_tracker.track_file(&pyproject_path)?;
+        update_pyproject_toml(project_dir, &extra_urls)?;
+    }
+
+    info!("Migrating Tool sections");
+    file_tracker.track_file(&pyproject_path)?;
+    pyproject::append_tool_sections(project_dir)?;
+
+    info!("Reordering pyproject.toml sections");
+    file_tracker.track_file(&pyproject_path)?;
+    crate::utils::toml::reorder_toml_sections(project_dir)?;
+
+    Ok(())
 }
