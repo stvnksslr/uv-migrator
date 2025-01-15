@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.4.0](https://github.com/stvnksslr/uv-migrator/compare/v2025.3.4...v2025.4.0) - 2025-01-15
+
+### Added
+- *(#53)* will attempt to init the uv project with any version information we can find in the previous packaging tool, if it doesnt find any will set the default python in the users path as is the default in uv (by @stvnksslr)
+- *(#51)* adds new build system migration only supports poetry currently (by @stvnksslr)
+- *(refactor)* alot of small bugs were cropping up from complex project setups that had lots of different files we were tracking, to make this easier to manage logic wise eveything has been broken into specific migration logic (by @stvnksslr)
+
+### Fixed
+- *(python version detection)* simplified logic to increase the chances of uv finding a python version within the range, ie 3.11 should find any installed 3.11 versions. (by @stvnksslr)
+
+### Other
+- chore(changing semver checks in releaseplz): (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2025.3.4](https://github.com/stvnksslr/uv-migrator/compare/v2025.3.3...v2025.3.4) - 2025-01-07
 
 ### Added
