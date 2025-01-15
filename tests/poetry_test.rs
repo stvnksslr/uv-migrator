@@ -746,3 +746,92 @@ description = "Test project"
     assert!(project_dir.join("pyproject.toml").exists());
     assert!(project_dir.join("old.pyproject.toml").exists());
 }
+
+fn create_test_project_with_old_pyproject(content: &str) -> (TempDir, PathBuf) {
+    let temp_dir = TempDir::new().unwrap();
+    let project_dir = temp_dir.path().to_path_buf();
+    let old_pyproject_path = project_dir.join("old.pyproject.toml");
+    fs::write(&old_pyproject_path, content).unwrap();
+    (temp_dir, project_dir)
+}
+
+#[test]
+fn test_extract_python_version_caret() {
+    let content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+"#;
+    let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
+    let version = PoetryMigrationSource::extract_python_version(&project_dir).unwrap();
+    assert_eq!(version, Some("3.9".to_string()));
+}
+
+#[test]
+fn test_extract_python_version_greater_equal() {
+    let content = r#"
+[tool.poetry.dependencies]
+python = ">=3.8"
+"#;
+    let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
+    let version = PoetryMigrationSource::extract_python_version(&project_dir).unwrap();
+    assert_eq!(version, Some("3.8".to_string()));
+}
+
+#[test]
+fn test_extract_python_version_tilde() {
+    let content = r#"
+[tool.poetry.dependencies]
+python = "~=3.10"
+"#;
+    let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
+    let version = PoetryMigrationSource::extract_python_version(&project_dir).unwrap();
+    assert_eq!(version, Some("3.10".to_string()));
+}
+
+#[test]
+fn test_extract_python_version_exact() {
+    let content = r#"
+[tool.poetry.dependencies]
+python = "3.11.0"
+"#;
+    let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
+    let version = PoetryMigrationSource::extract_python_version(&project_dir).unwrap();
+    assert_eq!(version, Some("3.11.0".to_string()));
+}
+
+#[test]
+fn test_extract_python_version_no_python() {
+    let content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+requests = "^2.31.0"
+"#;
+    let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
+    let version = PoetryMigrationSource::extract_python_version(&project_dir).unwrap();
+    assert_eq!(version, None);
+}
+
+#[test]
+fn test_extract_python_version_no_old_pyproject() {
+    let temp_dir = TempDir::new().unwrap();
+    let version = PoetryMigrationSource::extract_python_version(temp_dir.path()).unwrap();
+    assert_eq!(version, None);
+}
+
+#[test]
+fn test_extract_python_version_invalid_toml() {
+    let content = r#"
+[tool.poetry
+name = "test-project"
+"#;
+    let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
+    let result = PoetryMigrationSource::extract_python_version(&project_dir);
+    assert!(result.is_err());
+}

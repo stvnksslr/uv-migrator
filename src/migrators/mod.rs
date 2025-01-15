@@ -8,6 +8,7 @@ use crate::utils::{
     update_pyproject_toml, update_url, FileTrackerGuard,
 };
 use log::info;
+use poetry::PoetryMigrationSource;
 use setup_py::SetupPyMigrationSource;
 use std::collections::HashMap;
 use std::fs;
@@ -54,6 +55,8 @@ impl MigrationTool for UvTool {
     ) -> Result<(), String> {
         let pyproject_path = project_dir.join("pyproject.toml");
         let backup_path = project_dir.join("old.pyproject.toml");
+
+        // Backup existing pyproject.toml if it exists
         if pyproject_path.exists() {
             file_tracker.track_rename(&pyproject_path, &backup_path)?;
             fs::rename(&pyproject_path, &backup_path)
@@ -62,26 +65,57 @@ impl MigrationTool for UvTool {
         }
         file_tracker.track_file(&pyproject_path)?;
 
+        // Determine if this is a package project
         let is_package = matches!(
             project_type,
             &ProjectType::Poetry(PoetryProjectType::Package) | &ProjectType::SetupPy
         );
 
-        info!(
-            "Initializing new project with uv init{}",
-            if is_package { " --package" } else { "" }
-        );
+        // Extract Python version for Poetry projects
+        let python_version = match project_type {
+            ProjectType::Poetry(_) => {
+                match PoetryMigrationSource::extract_python_version(project_dir)? {
+                    Some(version) => {
+                        info!("Found Python version constraint: {}", version);
+                        Some(version)
+                    }
+                    None => {
+                        info!("No Python version constraint found, using --no-pin-python");
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
 
+        // Find uv executable
         let uv_path =
             which::which("uv").map_err(|e| format!("Failed to find uv command: {}", e))?;
 
+        // Build uv init command
         let mut command = std::process::Command::new(&uv_path);
         command.arg("init");
-        command.arg("--no-pin-python");
+
+        // Add appropriate flags based on project configuration
+        if python_version.is_none() {
+            command.arg("--no-pin-python");
+        }
+
         if is_package {
             command.arg("--package");
         }
+
+        if let Some(version) = python_version {
+            command.arg("--python").arg(version);
+        }
+
+        // Set working directory and execute command
         command.current_dir(project_dir);
+
+        info!(
+            "Executing uv init command: {:?}",
+            command.get_args().collect::<Vec<_>>()
+        );
 
         let output = command
             .output()
