@@ -13,6 +13,7 @@ pub use pip::parse_pip_conf;
 pub use pyproject::update_pyproject_toml;
 pub use pyproject::update_url;
 pub use uv::check_uv_requirements;
+pub mod build_system;
 
 #[cfg(feature = "self_update")]
 pub use update::update;

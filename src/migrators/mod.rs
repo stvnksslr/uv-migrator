@@ -1,4 +1,5 @@
 use crate::migrators::detect::{PoetryProjectType, ProjectType};
+use crate::utils::build_system::update_build_system;
 use crate::utils::{
     author::extract_authors_from_poetry,
     author::extract_authors_from_setup_py,
@@ -323,6 +324,14 @@ fn perform_poetry_migration(
     info!("Migrating Poetry scripts");
     file_tracker.track_file(&pyproject_path)?;
     pyproject::update_scripts(project_dir)?;
+
+    info!("Checking Poetry build system");
+    let mut doc = read_toml(&pyproject_path)?;
+    if update_build_system(&mut doc, project_dir)? {
+        info!("Migrated build system from Poetry to Hatchling");
+        file_tracker.track_file(&pyproject_path)?;
+        write_toml(&pyproject_path, &mut doc)?;
+    }
 
     Ok(())
 }
