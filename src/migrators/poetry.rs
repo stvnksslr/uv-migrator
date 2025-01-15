@@ -15,7 +15,6 @@ impl PoetryMigrationSource {
 
         if let Some(tool) = doc.get("tool") {
             if let Some(poetry) = tool.get("poetry") {
-                // Use is_some_and for more idiomatic code
                 let is_package = poetry
                     .get("packages")
                     .and_then(|packages| packages.as_array())
@@ -42,6 +41,64 @@ impl PoetryMigrationSource {
 
         debug!("No package configuration found, defaulting to application");
         Ok(PoetryProjectType::Application)
+    }
+
+    pub fn extract_python_version(project_dir: &Path) -> Result<Option<String>, String> {
+        let old_pyproject_path = project_dir.join("old.pyproject.toml");
+        if !old_pyproject_path.exists() {
+            return Ok(None);
+        }
+
+        let doc = read_toml(&old_pyproject_path)?;
+
+        if let Some(tool) = doc.get("tool") {
+            if let Some(poetry) = tool.get("poetry") {
+                if let Some(deps) = poetry.get("dependencies") {
+                    if let Some(python_dep) = deps.get("python") {
+                        let version_str = match python_dep {
+                            Item::Value(Value::String(s)) => s.value().trim().to_string(),
+                            _ => return Ok(None),
+                        };
+
+                        // Clean up the version string
+                        let version = version_str.trim_matches('"');
+
+                        // Convert poetry's ^3.9 format to 3.9
+                        if let Some(stripped) = version.strip_prefix('^') {
+                            return Ok(Some(stripped.to_string()));
+                        }
+
+                        // Handle >=3.9 format
+                        if let Some(stripped) = version.strip_prefix(">=") {
+                            return Ok(Some(stripped.to_string()));
+                        }
+
+                        // Handle ~=3.9 format
+                        if let Some(stripped) = version.strip_prefix("~=") {
+                            return Ok(Some(stripped.to_string()));
+                        }
+
+                        // Handle version ranges by extracting the minimum version
+                        if version.contains(',') {
+                            let min_version = version
+                                .split(',')
+                                .next()
+                                .and_then(|v| v.trim().strip_prefix(">="))
+                                .map(|v| v.trim().to_string());
+
+                            if let Some(version) = min_version {
+                                return Ok(Some(version));
+                            }
+                        }
+
+                        // If no special prefix, return as-is
+                        return Ok(Some(version.to_string()));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     fn format_dependency(
