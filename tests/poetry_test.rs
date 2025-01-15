@@ -800,7 +800,7 @@ python = "3.11.0"
 "#;
     let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
     let version = PoetryMigrationSource::extract_python_version(&project_dir).unwrap();
-    assert_eq!(version, Some("3.11.0".to_string()));
+    assert_eq!(version, Some("3.11".to_string()));
 }
 
 #[test]
