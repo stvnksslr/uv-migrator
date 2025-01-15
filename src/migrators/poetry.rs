@@ -60,39 +60,29 @@ impl PoetryMigrationSource {
                             _ => return Ok(None),
                         };
 
-                        // Clean up the version string
-                        let version = version_str.trim_matches('"');
-
-                        // Convert poetry's ^3.9 format to 3.9
-                        if let Some(stripped) = version.strip_prefix('^') {
-                            return Ok(Some(stripped.to_string()));
-                        }
-
-                        // Handle >=3.9 format
-                        if let Some(stripped) = version.strip_prefix(">=") {
-                            return Ok(Some(stripped.to_string()));
-                        }
-
-                        // Handle ~=3.9 format
-                        if let Some(stripped) = version.strip_prefix("~=") {
-                            return Ok(Some(stripped.to_string()));
-                        }
-
-                        // Handle version ranges by extracting the minimum version
-                        if version.contains(',') {
-                            let min_version = version
-                                .split(',')
+                        // Extract the minimum version from various formats
+                        let version = if let Some(stripped) = version_str.strip_prefix(">=") {
+                            stripped.split(',').next().unwrap_or(stripped)
+                        } else if let Some(stripped) = version_str.strip_prefix("^") {
+                            stripped
+                        } else if let Some(stripped) = version_str.strip_prefix("~=") {
+                            stripped
+                        } else {
+                            version_str
+                                .split(&[',', ' '])
                                 .next()
-                                .and_then(|v| v.trim().strip_prefix(">="))
-                                .map(|v| v.trim().to_string());
+                                .unwrap_or(&version_str)
+                        };
 
-                            if let Some(version) = min_version {
-                                return Ok(Some(version));
-                            }
-                        }
+                        // Extract major.minor
+                        let parts: Vec<&str> = version.split('.').collect();
+                        let normalized_version = match parts.len() {
+                            0 => return Ok(None),
+                            1 => format!("{}.0", parts[0]),
+                            _ => parts.into_iter().take(2).collect::<Vec<_>>().join("."),
+                        };
 
-                        // If no special prefix, return as-is
-                        return Ok(Some(version.to_string()));
+                        return Ok(Some(normalized_version));
                     }
                 }
             }

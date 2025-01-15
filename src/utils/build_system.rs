@@ -27,7 +27,19 @@ pub fn update_build_system(doc: &mut DocumentMut, project_dir: &Path) -> Result<
         .parse::<DocumentMut>()
         .map_err(|e| format!("Failed to parse old.pyproject.toml: {}", e))?;
 
-    let was_poetry_project = old_doc.get("tool").and_then(|t| t.get("poetry")).is_some();
+    let was_poetry_project = old_doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|poetry| poetry.get("packages"))
+        .and_then(|packages| packages.as_array())
+        .is_some_and(|packages| {
+            packages.iter().any(|pkg| {
+                pkg.as_inline_table()
+                    .and_then(|t| t.get("include"))
+                    .and_then(|i| i.as_str())
+                    == Some("src")
+            })
+        });
 
     let has_poetry_build_system = old_doc
         .get("build-system")

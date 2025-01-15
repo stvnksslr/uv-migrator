@@ -1,6 +1,6 @@
 [workspace]
 changelog_update = true
-semver_check = false 
+semver_check = false
 
 [changelog]
 body = """
