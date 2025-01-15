@@ -34,12 +34,12 @@ cargo install uv-migrator
 ✅ Pipenv support
 
 Package Formats  
-✅ setup.py
+✅ setup.py packages  
+✅ poetry packages
 
 ## Coming Soon
 
-Package formats         
-🔄 poetry package support        
+Project formats         
 🔄 anaconda projects
 
 ## Usage
