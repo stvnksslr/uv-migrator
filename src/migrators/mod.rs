@@ -16,7 +16,7 @@ use std::path::Path;
 use toml_edit::{Array, Formatted, Item, Value};
 
 mod dependency;
-mod detect;
+pub mod detect;
 pub mod pipenv;
 pub mod poetry;
 pub mod requirements;
