@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.5.0](https://github.com/stvnksslr/uv-migrator/compare/v2025.4.0...v2025.5.0) - 2025-01-26
+
+### Added
+- *(#55)* updates the migrator to handle the poetry v2 / general python formatting in the pyproject.toml, there is a bit of duplicated code now that needs to be trimmed down and consolidated (by @stvnksslr)
+
+### Fixed
+- *(#51)* another crack at improving the build system migration formats from python, ive chosen not to check for the actual path format yet as that will come in a later update (by @stvnksslr)
+
+### Other
+- chore(update readme): (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2025.4.0](https://github.com/stvnksslr/uv-migrator/compare/v2025.3.4...v2025.4.0) - 2025-01-15
 
 ### Added
