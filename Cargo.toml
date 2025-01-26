@@ -10,7 +10,7 @@ readme = "README.md"
 keywords = ["python", "uv"]
 
 [dependencies]
-clap = "4.5.23"
+clap = "4.5.27"
 dirs = "6.0.0"
 log = "0.4.22"
 env_logger = "0.11.6"
@@ -23,9 +23,9 @@ self_update = { version = "0.42.0", features = [
 serde = { version = "1.0.216", features = ["derive"] }
 toml = "0.8.19"
 which = "7.0.1"
-semver = "1.0.24"
+semver = "1.0.25"
 toml_edit = "0.22.22"
-serde_json = "1.0.134"
+serde_json = "1.0.137"
 
 [dev-dependencies]
 tempfile = "3.14.0"
