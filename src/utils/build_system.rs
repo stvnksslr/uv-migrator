@@ -34,10 +34,13 @@ pub fn update_build_system(doc: &mut DocumentMut, project_dir: &Path) -> Result<
         .and_then(|packages| packages.as_array())
         .is_some_and(|packages| {
             packages.iter().any(|pkg| {
-                pkg.as_inline_table()
-                    .and_then(|t| t.get("include"))
-                    .and_then(|i| i.as_str())
-                    == Some("src")
+                if let Some(table) = pkg.as_inline_table() {
+                    (table.get("from").and_then(|f| f.as_str()) == Some("src"))
+                        || (table.get("include").and_then(|i| i.as_str()).is_some()
+                            && table.get("from").and_then(|f| f.as_str()) == Some("src"))
+                } else {
+                    false
+                }
             })
         });
 
@@ -105,6 +108,80 @@ mod tests {
 [tool.poetry]
 name = "test-project"
 version = "0.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+"#;
+
+        let new_content = r#"
+[project]
+name = "test-project"
+version = "0.1.0"
+"#;
+
+        let (_temp_dir, mut doc, project_dir) = setup_test_environment(old_content, new_content);
+
+        let result = update_build_system(&mut doc, &project_dir).unwrap();
+        assert!(result);
+
+        let build_system = doc.get("build-system").unwrap();
+        let requires = build_system.get("requires").unwrap().as_array().unwrap();
+        let first_req = requires.get(0).unwrap().as_str().unwrap();
+        assert_eq!(first_req, "hatchling");
+
+        let backend = build_system.get("build-backend").unwrap().as_str().unwrap();
+        assert_eq!(backend, "hatchling.build");
+    }
+
+    #[test]
+    fn test_poetry_to_hatchling_with_just_from_src_package_config() {
+        let old_content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+
+[tool.poetry.packages]
+packages = [
+     { from = "src" },
+]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+"#;
+
+        let new_content = r#"
+[project]
+name = "test-project"
+version = "0.1.0"
+"#;
+
+        let (_temp_dir, mut doc, project_dir) = setup_test_environment(old_content, new_content);
+
+        let result = update_build_system(&mut doc, &project_dir).unwrap();
+        assert!(result);
+
+        let build_system = doc.get("build-system").unwrap();
+        let requires = build_system.get("requires").unwrap().as_array().unwrap();
+        let first_req = requires.get(0).unwrap().as_str().unwrap();
+        assert_eq!(first_req, "hatchling");
+
+        let backend = build_system.get("build-backend").unwrap().as_str().unwrap();
+        assert_eq!(backend, "hatchling.build");
+    }
+
+    #[test]
+    fn test_poetry_to_hatchling_with_include_and_from_src_package_config() {
+        let old_content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+
+[tool.poetry.packages]
+packages = [
+     { include = "my_package", from = "src" },
+]
 
 [build-system]
 requires = ["poetry-core"]

@@ -6,7 +6,7 @@ This project is not associated with astral or the uv project in anyway
 
 ## What is it?
 
-UV Migrator is simple cli tool designed to seamlessly transition Python projects from various dependency management systems to the UV package manager. 
+UV Migrator is simple cli tool designed to seamlessly transition Python projects from various dependency management systems to the UV package manager.
 It handles the complexities of migration while preserving your project's dependencies and any existing configs. This project currently supports migrating
 applications that consume packages, stay tuned for support for migrating packages themselves.
 
@@ -39,7 +39,7 @@ Package Formats
 
 ## Coming Soon
 
-Project formats         
+Project formats
 🔄 anaconda projects
 
 ## Usage
