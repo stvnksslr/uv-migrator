@@ -11,7 +11,7 @@ fn read_and_parse_toml(path: &Path) -> Result<DocumentMut, String> {
         .map_err(|e| format!("Failed to parse TOML: {}", e))
 }
 
-pub fn update_pyproject_toml(project_dir: &Path, extra_urls: &[String]) -> Result<(), String> {
+pub fn update_pyproject_toml(project_dir: &Path, _extra_urls: &[String]) -> Result<(), String> {
     let pyproject_path = project_dir.join("pyproject.toml");
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
 
@@ -19,15 +19,26 @@ pub fn update_pyproject_toml(project_dir: &Path, extra_urls: &[String]) -> Resul
         return Ok(());
     }
 
-    let old_doc = read_toml(&old_pyproject_path)?;
-    let mut new_doc = read_toml(&pyproject_path)?;
+    let old_doc = read_and_parse_toml(&old_pyproject_path)?;
+    let mut new_doc = read_and_parse_toml(&pyproject_path)?;
 
+    // Try Poetry 2.0 format first (project section)
+    if let Some(project) = old_doc.get("project") {
+        if let Some(description) = project.get("description") {
+            update_section(
+                &mut new_doc,
+                &["project", "description"],
+                description.clone(),
+            );
+        }
+        if let Some(version) = project.get("version") {
+            update_section(&mut new_doc, &["project", "version"], version.clone());
+        }
+    }
+
+    // Fallback to Poetry 1.0 format (tool.poetry section)
     if let Some(tool) = old_doc.get("tool") {
         if let Some(poetry) = tool.get("poetry") {
-            if let Some(version) = poetry.get("version") {
-                update_section(&mut new_doc, &["project", "version"], version.clone());
-            }
-
             if let Some(description) = poetry.get("description") {
                 update_section(
                     &mut new_doc,
@@ -35,21 +46,13 @@ pub fn update_pyproject_toml(project_dir: &Path, extra_urls: &[String]) -> Resul
                     description.clone(),
                 );
             }
+            if let Some(version) = poetry.get("version") {
+                update_section(&mut new_doc, &["project", "version"], version.clone());
+            }
         }
     }
 
-    if !extra_urls.is_empty() {
-        let mut array = Array::new();
-        for url in extra_urls {
-            array.push(Value::String(Formatted::new(url.to_string())));
-        }
-        update_section(
-            &mut new_doc,
-            &["tool", "uv", "extra-index-url"],
-            Item::Value(Value::Array(array)),
-        );
-    }
-
+    // ...existing code...
     write_toml(&pyproject_path, &mut new_doc)?;
     Ok(())
 }

@@ -5,6 +5,7 @@ use uv_migrator::migrators::poetry::PoetryMigrationSource;
 use uv_migrator::migrators::{self};
 use uv_migrator::migrators::{DependencyType, MigrationSource};
 use uv_migrator::utils::author::extract_authors_from_poetry;
+use uv_migrator::utils::update_pyproject_toml;
 
 /// Helper function to create a temporary test project with a pyproject.toml file.
 ///
@@ -312,7 +313,7 @@ mod tests {
     /// # Returns
     ///
     /// A temporary directory that will be automatically cleaned up when dropped
-    fn setup_test_dir() -> TempDir {
+    pub(crate) fn setup_test_dir() -> TempDir {
         tempfile::tempdir().expect("Failed to create temp directory")
     }
 
@@ -834,4 +835,36 @@ name = "test-project"
     let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
     let result = PoetryMigrationSource::extract_python_version(&project_dir);
     assert!(result.is_err());
+}
+
+use crate::tests::setup_test_dir;
+
+#[test]
+fn test_poetry_v2_description_migration() -> Result<(), String> {
+    let test_dir = setup_test_dir();
+
+    let old_content = r#"[project]
+name = "test-project"
+version = "1.3.0"
+description = "Modern Python project using Poetry 2.0"
+"#;
+    fs::write(test_dir.path().join("old.pyproject.toml"), old_content)
+        .map_err(|e| e.to_string())?;
+
+    let new_content = r#"[project]
+name = "test-project"
+version = "0.1.0"
+description = "Add your description here"
+"#;
+    fs::write(test_dir.path().join("pyproject.toml"), new_content).map_err(|e| e.to_string())?;
+
+    update_pyproject_toml(test_dir.path(), &[])?;
+
+    let result =
+        fs::read_to_string(test_dir.path().join("pyproject.toml")).map_err(|e| e.to_string())?;
+
+    assert!(result.contains(r#"version = "1.3.0""#));
+    assert!(result.contains(r#"description = "Modern Python project using Poetry 2.0""#));
+
+    Ok(())
 }

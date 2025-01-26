@@ -13,6 +13,15 @@ impl PoetryMigrationSource {
         let pyproject_path = project_dir.join("pyproject.toml");
         let doc = read_toml(&pyproject_path)?;
 
+        // First, check the project section (Poetry 2.0 style)
+        if let Some(project) = doc.get("project") {
+            // If project section has dependencies, it's likely a Poetry 2.0 package
+            if project.get("dependencies").is_some() {
+                return Ok(PoetryProjectType::Package);
+            }
+        }
+
+        // Traditional Poetry style detection
         if let Some(tool) = doc.get("tool") {
             if let Some(poetry) = tool.get("poetry") {
                 let is_package = poetry
@@ -51,6 +60,33 @@ impl PoetryMigrationSource {
 
         let doc = read_toml(&old_pyproject_path)?;
 
+        // First, check project section (Poetry 2.0 style)
+        if let Some(project) = doc.get("project") {
+            if let Some(python_dep) = project.get("requires-python").and_then(|p| p.as_str()) {
+                // Extract the minimum version from various formats
+                let version = if let Some(stripped) = python_dep.strip_prefix(">=") {
+                    stripped.split(',').next().unwrap_or(stripped)
+                } else if let Some(stripped) = python_dep.strip_prefix("^") {
+                    stripped
+                } else if let Some(stripped) = python_dep.strip_prefix("~=") {
+                    stripped
+                } else {
+                    python_dep.split(&[',', ' ']).next().unwrap_or(python_dep)
+                };
+
+                // Extract major.minor
+                let parts: Vec<&str> = version.split('.').collect();
+                let normalized_version = match parts.len() {
+                    0 => return Ok(None),
+                    1 => format!("{}.0", parts[0]),
+                    _ => parts.into_iter().take(2).collect::<Vec<_>>().join("."),
+                };
+
+                return Ok(Some(normalized_version));
+            }
+        }
+
+        // If not found in project section, fall back to tool.poetry section
         if let Some(tool) = doc.get("tool") {
             if let Some(poetry) = tool.get("poetry") {
                 if let Some(deps) = poetry.get("dependencies") {
@@ -89,6 +125,26 @@ impl PoetryMigrationSource {
         }
 
         Ok(None)
+    }
+
+    fn parse_poetry_v2_dep(&self, dep_str: &str) -> (String, Option<String>) {
+        // Split the dependency string to extract name and version
+        let parts: Vec<&str> = dep_str.split_whitespace().collect();
+
+        match parts.len() {
+            1 => (parts[0].to_string(), None), // No version specified
+            2 => {
+                // Version is specified, potentially with comparison operators
+                let name = parts[0].to_string();
+                let version = parts[1].trim_matches(&['(', ')'][..]).to_string();
+                (name, Some(version))
+            }
+            _ => {
+                // Fallback for unexpected formats
+                debug!("Unexpected dependency format: {}", dep_str);
+                (dep_str.to_string(), None)
+            }
+        }
     }
 
     fn format_dependency(
@@ -167,16 +223,46 @@ impl MigrationSource for PoetryMigrationSource {
 
         let mut dependencies = Vec::new();
 
+        // First, check the project section (Poetry 2.0 style)
+        if let Some(project) = doc.get("project") {
+            // Extract dependencies from project section
+            if let Some(proj_deps) = project.get("dependencies").and_then(|d| d.as_array()) {
+                debug!("Processing main dependencies from project section");
+                for dep_value in proj_deps.iter() {
+                    if let Some(dep_str) = dep_value.as_str() {
+                        // Split the dependency string into name and version
+                        let (name, version) = self.parse_poetry_v2_dep(dep_str);
+
+                        let dep = Dependency {
+                            name,
+                            version,
+                            dep_type: DependencyType::Main,
+                            environment_markers: None,
+                        };
+
+                        dependencies.push(dep);
+                    }
+                }
+            }
+        }
+
+        // Then, check the tool.poetry section (traditional Poetry style)
         if let Some(tool) = doc.get("tool") {
             if let Some(poetry) = tool.get("poetry") {
                 // Handle main dependencies
                 if let Some(deps) = poetry.get("dependencies").and_then(|d| d.as_table()) {
-                    debug!("Processing main dependencies");
+                    debug!("Processing main dependencies from tool.poetry section");
                     for (name, value) in deps.iter() {
                         if let Some(dep) = self.format_dependency(name, value, DependencyType::Main)
                         {
                             debug!("Added main dependency: {}", name);
-                            dependencies.push(dep);
+                            // Avoid duplicates
+                            if !dependencies
+                                .iter()
+                                .any(|existing| existing.name == dep.name)
+                            {
+                                dependencies.push(dep);
+                            }
                         }
                     }
                 }

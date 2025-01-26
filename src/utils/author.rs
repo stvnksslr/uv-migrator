@@ -45,14 +45,39 @@ pub fn extract_authors_from_poetry(project_dir: &Path) -> Result<Vec<Author>, St
         .parse::<DocumentMut>()
         .map_err(|e| format!("Failed to parse TOML: {}", e))?;
 
-    // Get poetry section from the TOML document
-    let poetry = doc
+    // Extract authors from project section (Poetry 2.0 style)
+    if let Some(project) = doc.get("project") {
+        if let Some(authors_array) = project.get("authors").and_then(|a| a.as_array()) {
+            let mut results = Vec::new();
+            for author_value in authors_array.iter() {
+                if let Some(author_str) = author_value.as_str() {
+                    results.push(parse_author_string(author_str));
+                } else if let Some(author_table) = author_value.as_inline_table() {
+                    // Poetry 2.0 style inline table
+                    let name = author_table
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+
+                    let email = author_table
+                        .get("email")
+                        .and_then(|e| e.as_str())
+                        .map(|s| s.to_string());
+
+                    results.push(Author { name, email });
+                }
+            }
+            return Ok(results);
+        }
+    }
+
+    // Fallback to traditional Poetry section
+    let authors = match doc
         .get("tool")
         .and_then(|t| t.get("poetry"))
-        .ok_or_else(|| "No [tool.poetry] section found".to_string())?;
-
-    // Get authors array
-    let authors = match poetry.get("authors") {
+        .and_then(|poetry| poetry.get("authors"))
+    {
         Some(array) => {
             let mut result = Vec::new();
             if let Some(arr) = array.as_array() {
@@ -73,7 +98,33 @@ pub fn extract_authors_from_poetry(project_dir: &Path) -> Result<Vec<Author>, St
 fn parse_author_string(author_str: &str) -> Author {
     let author_str = author_str.trim();
 
-    // Pattern match for email between angle brackets
+    // First, check for Poetry 2.0 style inline table author format
+    if author_str.starts_with('{') && author_str.ends_with('}') {
+        // Remove {} and split by commas
+        let content = &author_str[1..author_str.len() - 1];
+        let mut name = String::new();
+        let mut email = None;
+
+        for part in content.split(',') {
+            let part = part.trim();
+            if let Some(name_part) = part
+                .strip_prefix("name = ")
+                .or_else(|| part.strip_prefix("name="))
+            {
+                name = name_part.trim_matches(&['"', '\''][..]).to_string();
+            }
+            if let Some(email_part) = part
+                .strip_prefix("email = ")
+                .or_else(|| part.strip_prefix("email="))
+            {
+                email = Some(email_part.trim_matches(&['"', '\''][..]).to_string());
+            }
+        }
+
+        return Author { name, email };
+    }
+
+    // Classic Poetry author format with email in angle brackets
     let (name, email) = match (author_str.rfind('<'), author_str.rfind('>')) {
         (Some(start), Some(end)) if start < end => {
             let name = author_str[..start].trim().to_string();
