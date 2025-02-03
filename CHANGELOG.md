@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.6.0](https://github.com/stvnksslr/uv-migrator/compare/v2025.5.1...v2025.6.0) - 2025-02-03
+
+### Added
+- *(#57)* reduces the number of files created in all variations of flags and workflows (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2025.5.1](https://github.com/stvnksslr/uv-migrator/compare/v2025.5.0...v2025.5.1) - 2025-02-03
 
 ### Added
