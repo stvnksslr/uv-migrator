@@ -54,7 +54,7 @@ Options:
       --merge-groups                 Merge all dependency groups into the dev group
       --import-global-pip-conf       Import extra index URLs from ~/.pip/pip.conf
       --import-index <import-index>  Additional index URL to import
-      --self-update                  Update uv-migrator to the latest version
+      --disable-restore              Disable automatic file restore on error
   -h, --help                         Print help (see more with '--help')
   -V, --version                      Print version
 
@@ -71,8 +71,8 @@ uv-migrator . --import-index https://private.pypi.org/simple/
 # Migrate using global pip configuration
 uv-migrator . --import-global-pip-conf
 
-# Update uv-migrator to the latest version
-uv-migrator --self-update
+# Migrate without automatic restore on error
+uv-migrator . --disable-restore
 
 For more information and documentation, visit:
 https://github.com/stvnksslr/uv-migrator

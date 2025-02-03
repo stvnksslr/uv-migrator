@@ -138,6 +138,7 @@ pub struct FileTrackerGuard {
     tracker: FileTracker,
     should_rollback: bool,
     has_performed_rollback: bool,
+    restore_enabled: bool,
 }
 
 impl Default for FileTrackerGuard {
@@ -152,6 +153,16 @@ impl FileTrackerGuard {
             tracker: FileTracker::new(),
             should_rollback: false,
             has_performed_rollback: false,
+            restore_enabled: true,
+        }
+    }
+
+    pub fn new_with_restore(restore_enabled: bool) -> Self {
+        FileTrackerGuard {
+            tracker: FileTracker::new(),
+            should_rollback: false,
+            has_performed_rollback: false,
+            restore_enabled,
         }
     }
 
@@ -168,7 +179,7 @@ impl FileTrackerGuard {
     }
 
     fn perform_rollback(&mut self) {
-        if !self.has_performed_rollback {
+        if !self.has_performed_rollback && self.restore_enabled {
             if let Err(e) = self.tracker.rollback() {
                 error!("Error during rollback: {}", e);
             }
@@ -179,7 +190,7 @@ impl FileTrackerGuard {
 
 impl Drop for FileTrackerGuard {
     fn drop(&mut self) {
-        if std::thread::panicking() || self.should_rollback {
+        if (std::thread::panicking() || self.should_rollback) && self.restore_enabled {
             self.perform_rollback();
         }
     }

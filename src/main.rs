@@ -72,6 +72,17 @@ fn run() -> Result<(), String> {
                 )
                 .action(clap::ArgAction::Append)
                 .value_parser(clap::value_parser!(String))
+        )
+        .arg(
+            Arg::new("disable-restore")
+                .long("disable-restore")
+                .help("Disable automatic file restore on error")
+                .long_help(
+                    "When this flag is set, the migrator will not attempt to restore files to their \
+                    original state if an error occurs during migration. This can be useful in \
+                    automated environments or when you want to inspect the partial migration state."
+                )
+                .action(clap::ArgAction::SetTrue)
         );
 
     #[cfg(feature = "self_update")]
@@ -101,7 +112,10 @@ fn run() -> Result<(), String> {
             uv-migrator . --import-index https://private.pypi.org/simple/\n\
             \n\
             # Migrate using global pip configuration\n\
-            uv-migrator . --import-global-pip-conf\n",
+            uv-migrator . --import-global-pip-conf\n\
+            \n\
+            # Migrate without automatic restore on error\n\
+            uv-migrator . --disable-restore\n",
         );
 
         #[cfg(feature = "self_update")]
@@ -151,6 +165,7 @@ fn run() -> Result<(), String> {
 
     let import_global_pip_conf = matches.get_flag("import-global-pip-conf");
     let merge_groups = matches.get_flag("merge-groups");
+    let disable_restore = matches.get_flag("disable-restore");
     let additional_index_urls: Vec<String> = matches
         .get_many::<String>("import-index")
         .map(|values| values.cloned().collect())
@@ -161,6 +176,7 @@ fn run() -> Result<(), String> {
         import_global_pip_conf,
         &additional_index_urls,
         merge_groups,
+        !disable_restore,
     ) {
         Ok(_) => {
             info!("Migration completed successfully");
