@@ -96,11 +96,6 @@ impl MigrationTool for UvTool {
         let mut command = std::process::Command::new(&uv_path);
         command.arg("init");
 
-        // Add appropriate flags based on project configuration
-        if python_version.is_none() {
-            command.arg("--no-pin-python");
-        }
-
         if is_package {
             command.arg("--package");
         }
@@ -108,6 +103,11 @@ impl MigrationTool for UvTool {
         if let Some(version) = python_version {
             command.arg("--python").arg(version);
         }
+
+        // reduce number of files created
+        command.arg("--no-pin-python");
+        command.arg("--vcs").arg("none");
+        command.arg("--no-readme");
 
         // Set working directory and execute command
         command.current_dir(project_dir);
