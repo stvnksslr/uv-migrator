@@ -227,8 +227,9 @@ pub fn run_migration(
     import_global_pip_conf: bool,
     additional_index_urls: &[String],
     merge_groups: bool,
+    restore_enabled: bool,
 ) -> Result<(), String> {
-    let mut file_tracker = FileTrackerGuard::new();
+    let mut file_tracker = FileTrackerGuard::new_with_restore(restore_enabled);
     let hello_py_path = project_dir.join("hello.py");
     let pyproject_path = project_dir.join("pyproject.toml");
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
