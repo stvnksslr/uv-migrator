@@ -39,7 +39,7 @@ Package Formats
 
 ## Coming Soon
 
-Project formats
+Project formats  
 🔄 anaconda projects
 
 ## Usage
