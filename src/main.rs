@@ -1,5 +1,6 @@
 use crate::utils::check_uv_requirements;
 use clap::{Arg, Command};
+use env_logger::{Builder, Env};
 use log::{error, info};
 use std::env;
 use std::path::Path;
@@ -9,7 +10,11 @@ mod types;
 mod utils;
 
 fn main() {
-    env_logger::init();
+    // Initialize logger with default info level
+    Builder::from_env(Env::default().default_filter_or("info"))
+        .format_timestamp(None)
+        .format_target(false)
+        .init();
 
     if let Err(e) = run() {
         error!("{}", e);
