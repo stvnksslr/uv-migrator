@@ -1,11 +1,12 @@
 use crate::migrators::detect::{PoetryProjectType, ProjectType};
 use crate::utils::build_system::update_build_system;
 use crate::utils::{
+    FileTrackerGuard,
     author::extract_authors_from_poetry,
     author::extract_authors_from_setup_py,
     parse_pip_conf, pyproject,
     toml::{read_toml, update_section, write_toml},
-    update_pyproject_toml, update_url, FileTrackerGuard,
+    update_pyproject_toml, update_url,
 };
 use log::info;
 use poetry::PoetryMigrationSource;

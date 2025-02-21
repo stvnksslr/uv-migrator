@@ -161,11 +161,7 @@ impl PoetryMigrationSource {
         let version = match value {
             Item::Value(Value::String(v)) => {
                 let v = v.value().trim();
-                if v == "*" {
-                    None
-                } else {
-                    Some(v.to_string())
-                }
+                if v == "*" { None } else { Some(v.to_string()) }
             }
             Item::Value(Value::InlineTable(t)) => t.get("version").and_then(|v| match v {
                 Value::String(s) => {
