@@ -109,7 +109,7 @@ fn extract_version_from_init_py(project_dir: &Path) -> Result<Option<String>, St
         if path.is_dir()
             && !path
                 .file_name()
-                .map_or(true, |n| n.to_string_lossy().starts_with('.'))
+                .is_none_or(|n| n.to_string_lossy().starts_with('.'))
         {
             let init_path = path.join("__init__.py");
             if let Some(version) = extract_version_from_init_file(&init_path)? {
