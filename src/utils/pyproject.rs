@@ -118,39 +118,47 @@ pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
     let pyproject_path = project_dir.join("pyproject.toml");
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
 
-    // First read the old pyproject.toml to get Poetry scripts
-    let old_doc = read_and_parse_toml(&old_pyproject_path)?;
-
-    // Then read the new pyproject.toml
+    // First read the new pyproject.toml
     let mut doc = read_and_parse_toml(&pyproject_path)?;
 
-    if let Some(scripts_table) = migrate_poetry_scripts(&old_doc) {
-        // Remove any existing scripts section if present
-        if let Some(project) = doc.get_mut("project") {
+    // Check and sanitize any existing scripts in the new pyproject.toml
+    if let Some(project) = doc.get_mut("project") {
+        if let Some(scripts) = project.get("scripts").and_then(|s| s.as_table()) {
+            let mut sanitized_scripts = Table::new();
+            for (name, value) in scripts.iter() {
+                let sanitized_name = sanitize_script_name(name);
+                sanitized_scripts.insert(&sanitized_name, value.clone());
+            }
             if let Some(table) = project.as_table_mut() {
                 table.remove("scripts");
+                table.insert("scripts", Item::Table(sanitized_scripts));
             }
         }
+    }
 
-        // Add the new scripts section
-        update_section(
-            &mut doc,
-            &["project", "scripts"],
-            Item::Table(scripts_table),
-        );
+    // Handle migration from old pyproject.toml if it exists
+    if old_pyproject_path.exists() {
+        let old_doc = read_and_parse_toml(&old_pyproject_path)?;
+        if let Some(scripts_table) = migrate_poetry_scripts(&old_doc) {
+            update_section(
+                &mut doc,
+                &["project", "scripts"],
+                Item::Table(scripts_table),
+            );
 
-        // Remove the old scripts section if it exists
-        if let Some(tool) = doc.get_mut("tool") {
-            if let Some(poetry) = tool.get_mut("poetry") {
-                if let Some(table) = poetry.as_table_mut() {
-                    table.remove("scripts");
+            // Remove the old scripts section if it exists
+            if let Some(tool) = doc.get_mut("tool") {
+                if let Some(poetry) = tool.get_mut("poetry") {
+                    if let Some(table) = poetry.as_table_mut() {
+                        table.remove("scripts");
+                    }
                 }
             }
         }
-
-        write_toml(&pyproject_path, &mut doc)?;
-        info!("Successfully migrated Poetry scripts to project scripts format");
     }
+
+    write_toml(&pyproject_path, &mut doc)?;
+    info!("Successfully processed scripts in pyproject.toml");
 
     Ok(())
 }
