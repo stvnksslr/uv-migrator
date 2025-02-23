@@ -161,7 +161,13 @@ fn sanitize_script_name(name: &str) -> String {
 
     let sanitized = name.trim().to_lowercase();
     if RESERVED_NAMES.contains(&sanitized.as_str()) {
-        format!("{}_script", sanitized)
+        let new_name = format!("{}_script", sanitized);
+        log::warn!(
+            "Script name '{}' is reserved - automatically renamed to '{}'",
+            name,
+            new_name
+        );
+        new_name
     } else {
         name.to_string()
     }
