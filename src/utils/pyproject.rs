@@ -52,7 +52,6 @@ pub fn update_pyproject_toml(project_dir: &Path, _extra_urls: &[String]) -> Resu
         }
     }
 
-    // ...existing code...
     write_toml(&pyproject_path, &mut new_doc)?;
     Ok(())
 }
@@ -99,9 +98,10 @@ pub fn migrate_poetry_scripts(doc: &DocumentMut) -> Option<Table> {
 
     for (script_name, script_value) in poetry_scripts.iter() {
         if let Some(script_str) = script_value.as_str() {
+            let sanitized_name = sanitize_script_name(script_name);
             let converted_script = convert_script_format(script_str);
             scripts_table.insert(
-                script_name,
+                &sanitized_name,
                 toml_edit::Item::Value(Value::String(Formatted::new(converted_script))),
             );
         }
@@ -155,9 +155,21 @@ pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn sanitize_script_name(name: &str) -> String {
+    // List of reserved names that should be modified
+    const RESERVED_NAMES: [&str; 1] = ["python"];
+
+    let sanitized = name.trim().to_lowercase();
+    if RESERVED_NAMES.contains(&sanitized.as_str()) {
+        format!("{}_script", sanitized)
+    } else {
+        name.to_string()
+    }
+}
+
 fn convert_script_format(poetry_script: &str) -> String {
     let script = poetry_script.trim_matches(|c| c == '\'' || c == '"');
-    script.to_string()
+    sanitize_script_name(script)
 }
 
 pub fn update_project_version(project_dir: &Path, version: &str) -> Result<(), String> {
@@ -298,4 +310,26 @@ pub fn extract_poetry_sources(project_dir: &Path) -> Result<Vec<(String, String)
     }
 
     Ok(sources)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_script_name_sanitization() {
+        assert_eq!(sanitize_script_name("test"), "test");
+        assert_eq!(sanitize_script_name("python"), "python_script");
+        assert_eq!(sanitize_script_name("PYTHON"), "python_script");
+        assert_eq!(sanitize_script_name(" python "), "python_script");
+        assert_eq!(sanitize_script_name("other"), "other");
+    }
+
+    #[test]
+    fn test_convert_script_format() {
+        assert_eq!(convert_script_format("\"test-command\""), "test-command");
+        assert_eq!(convert_script_format("'python-run'"), "python-run");
+        assert_eq!(convert_script_format("python"), "python_script");
+        assert_eq!(convert_script_format("\"python\""), "python_script");
+    }
 }
