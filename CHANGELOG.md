@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.6.2](https://github.com/stvnksslr/uv-migrator/compare/v2025.6.1...v2025.6.2) - 2025-02-23
+
+### Fixed
+- *(#63)* add warning to explain why this was done (by @stvnksslr)
+- *(#63)* fix edge case with uv creating a base python script that can clash with system python (by @stvnksslr)
+
+### Other
+- *(clippy --fix issue)* when updating to the rust 2024 edition clippy overzelously removed a logging config (by @stvnksslr)
+- *(clippy --fix issue)* when updating to the rust 2024 edition clippy overzelously removed a logging config (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2025.6.1](https://github.com/stvnksslr/uv-migrator/compare/v2025.6.0...v2025.6.1) - 2025-02-21
 
 ### Fixed
