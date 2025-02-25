@@ -201,10 +201,80 @@ impl MigrationTool for UvTool {
 }
 
 // These functions have been moved to common.rs
+use crate::utils::toml::{read_toml, update_section, write_toml};
 pub use common::{
     merge_dependency_groups, perform_common_migrations, perform_pipenv_migration,
     perform_poetry_migration, perform_requirements_migration, perform_setup_py_migration,
 };
+
+pub fn perform_poetry_migration_with_type(
+    project_dir: &Path,
+    file_tracker: &mut FileTrackerGuard,
+    project_type: PoetryProjectType,
+) -> Result<()> {
+    // First, run the standard poetry migration
+    perform_poetry_migration(project_dir, file_tracker)?;
+
+    // Then, handle packages configuration for Poetry v2 packages
+    let old_pyproject_path = project_dir.join("old.pyproject.toml");
+    if old_pyproject_path.exists() && matches!(project_type, PoetryProjectType::Package) {
+        let doc = read_toml(&old_pyproject_path)?;
+
+        // Try to find packages configuration in either tool.poetry or project.packages
+        let packages = if let Some(packages) = doc
+            .get("tool")
+            .and_then(|t| t.get("poetry"))
+            .and_then(|p| p.get("packages"))
+            .and_then(|p| p.as_array())
+        {
+            Some(packages)
+        } else {
+            doc.get("project")
+                .and_then(|p| p.get("packages"))
+                .and_then(|p| p.as_array())
+        };
+
+        if let Some(packages) = packages {
+            if !packages.is_empty() {
+                let pyproject_path = project_dir.join("pyproject.toml");
+                file_tracker.track_file(&pyproject_path)?;
+                let mut doc = read_toml(&pyproject_path)?;
+
+                let mut packages_vec = Vec::new();
+                for package in packages.iter() {
+                    if let Some(include) = package
+                        .as_inline_table()
+                        .and_then(|t| t.get("include"))
+                        .and_then(|i| i.as_str())
+                    {
+                        packages_vec.push(include.to_string());
+                    } else if let Some(include) = package.as_str() {
+                        packages_vec.push(include.to_string());
+                    }
+                }
+
+                if !packages_vec.is_empty() {
+                    let mut packages_array = toml_edit::Array::new();
+                    for pkg in packages_vec {
+                        packages_array
+                            .push(toml_edit::Value::String(toml_edit::Formatted::new(pkg)));
+                    }
+
+                    update_section(
+                        &mut doc,
+                        &["tool", "hatch", "build", "targets", "wheel", "packages"],
+                        toml_edit::Item::Value(toml_edit::Value::Array(packages_array)),
+                    );
+
+                    write_toml(&pyproject_path, &mut doc)?;
+                    info!("Migrated Poetry packages configuration to Hatchling");
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
 
 /// Formats a dependency for use with UV command line
 pub fn format_dependency(dep: &Dependency) -> String {
@@ -283,6 +353,8 @@ pub fn run_migration(
         let migration_tool = UvTool;
 
         // For Poetry projects, override Package type to Application if there's no actual package structure
+        // BUT KEEP TRACK OF THE ORIGINAL TYPE for later package config migration
+        let original_project_type = project_type.clone();
         let adjusted_project_type = match &project_type {
             ProjectType::Poetry(poetry_type) => {
                 if matches!(poetry_type, PoetryProjectType::Package)
@@ -310,8 +382,24 @@ pub fn run_migration(
         file_tracker.track_file(&pyproject_path)?;
 
         if old_pyproject_path.exists() {
+            // IMPORTANT CHANGE: Use the original_project_type for package config migration, not the adjusted one
+            let migration_type = match original_project_type {
+                ProjectType::Poetry(poetry_type) => poetry_type,
+                _ => match &project_type {
+                    ProjectType::Poetry(poetry_type) => poetry_type.clone(),
+                    _ => PoetryProjectType::Application,
+                },
+            };
+
             match project_type {
-                ProjectType::Poetry(_) => perform_poetry_migration(project_dir, &mut file_tracker)?,
+                ProjectType::Poetry(_) => {
+                    // Pass the original poetry type to ensure package configs are migrated properly
+                    perform_poetry_migration_with_type(
+                        project_dir,
+                        &mut file_tracker,
+                        migration_type,
+                    )?
+                }
                 ProjectType::SetupPy => perform_setup_py_migration(project_dir, &mut file_tracker)?,
                 ProjectType::Pipenv => perform_pipenv_migration(project_dir, &mut file_tracker)?,
                 ProjectType::Requirements => {

@@ -15,27 +15,64 @@ impl PoetryMigrationSource {
         let pyproject_path = project_dir.join("pyproject.toml");
         let doc = read_toml(&pyproject_path)?;
 
-        // First, check for actual package structure on disk
+        // First, check for actual package structure on disk - this is the strongest indicator
         if Self::verify_real_package_structure(project_dir) {
             debug!("Detected package structure on disk");
             return Ok(PoetryProjectType::Package);
         }
 
-        // Next, check pyproject.toml for package configuration
-        let has_package_config = Self::has_package_configuration(&doc);
+        // Check for explicit package configuration in pyproject.toml
+        let has_explicit_packages = doc
+            .get("tool")
+            .and_then(|t| t.get("poetry"))
+            .and_then(|p| p.get("packages"))
+            .and_then(|p| p.as_array())
+            .is_some_and(|pkgs| !pkgs.is_empty());
 
-        if has_package_config {
-            debug!("Package configuration found in pyproject.toml");
+        if has_explicit_packages {
+            debug!("Found explicit package configuration in pyproject.toml");
             return Ok(PoetryProjectType::Package);
         }
 
-        // Check if setup.py exists, which would indicate a package
+        // Check for setup.py, which is a strong indicator of a package
         if project_dir.join("setup.py").exists() {
             debug!("setup.py found, treating as package");
             return Ok(PoetryProjectType::Package);
         }
 
-        debug!("No package indicators found, defaulting to application");
+        // Check for project structure that indicates a package
+        // Look for common Python package structures
+        let project_name = extract_project_name_from_doc(&doc);
+        if let Some(name) = &project_name {
+            let snake_case_name = name.replace('-', "_").to_lowercase();
+
+            // Check for common package directory patterns
+            if project_dir
+                .join(&snake_case_name)
+                .join("__init__.py")
+                .exists()
+                || project_dir
+                    .join("src")
+                    .join(&snake_case_name)
+                    .join("__init__.py")
+                    .exists()
+            {
+                debug!("Found package structure matching project name");
+                return Ok(PoetryProjectType::Package);
+            }
+        }
+
+        // Having scripts alone doesn't make it a package - it depends on the project's intent
+        // Look for other package indicators
+        let has_package_indicators = Self::has_strong_package_indicators(&doc);
+
+        if has_package_indicators {
+            debug!("Strong package indicators found in pyproject.toml");
+            return Ok(PoetryProjectType::Package);
+        }
+
+        // Default to application if no strong package indicators were found
+        debug!("No strong package indicators found, defaulting to application");
         Ok(PoetryProjectType::Application)
     }
 
@@ -76,38 +113,39 @@ impl PoetryMigrationSource {
         false
     }
 
-    /// Checks if the project has package configuration in pyproject.toml
-    fn has_package_configuration(doc: &DocumentMut) -> bool {
-        // Check for Poetry 1.0 style package configuration
-        let has_poetry_packages = doc
+    /// Check for stronger package indicators beyond just having scripts
+    fn has_strong_package_indicators(doc: &DocumentMut) -> bool {
+        // Check for specific package-related configurations
+        let has_classifiers = doc
             .get("tool")
-            .and_then(|tool| tool.get("poetry"))
-            .and_then(|poetry| poetry.get("packages"))
-            .and_then(|packages| packages.as_array())
-            .is_some_and(|packages| !packages.is_empty());
+            .and_then(|t| t.get("poetry"))
+            .and_then(|p| p.get("classifiers"))
+            .and_then(|c| c.as_array())
+            .is_some_and(|classifiers| {
+                classifiers.iter().any(|c| {
+                    c.as_str().is_some_and(|s| {
+                        s.contains("Development Status")
+                            || s.contains("Programming Language")
+                            || s.contains("License")
+                    })
+                })
+            });
 
-        // Check for Poetry 2.0 style project with package indicators
-        let has_pep621_package_indicators = doc
-            .get("project")
-            .map(|project| {
-                // Check for typical package indicators in PEP 621 format
-                if project.get("dependencies").is_some() {
-                    let has_urls = project.get("urls").is_some();
-                    let has_classifiers = project.get("classifiers").is_some();
-                    let has_keywords = project.get("keywords").is_some();
+        let has_keywords = doc
+            .get("tool")
+            .and_then(|t| t.get("poetry"))
+            .and_then(|p| p.get("keywords"))
+            .and_then(|k| k.as_array())
+            .is_some_and(|kw| !kw.is_empty());
 
-                    // If it has multiple of these fields, it's likely a package
-                    (has_urls as u8) + (has_classifiers as u8) + (has_keywords as u8) >= 2
-                } else {
-                    false
-                }
-            })
-            .unwrap_or(false);
+        let has_readme = doc
+            .get("tool")
+            .and_then(|t| t.get("poetry"))
+            .and_then(|p| p.get("readme"))
+            .is_some();
 
-        // Check for build-system section which is common for packages
-        let has_build_system = doc.get("build-system").is_some();
-
-        has_poetry_packages || has_pep621_package_indicators || has_build_system
+        // Having multiple of these indicators suggests a more formal package
+        (has_classifiers as u8) + (has_keywords as u8) + (has_readme as u8) >= 2
     }
 
     pub fn extract_python_version(project_dir: &Path) -> Result<Option<String>> {
@@ -414,4 +452,28 @@ impl MigrationSource for PoetryMigrationSource {
         info!("Extracted {} dependencies", dependencies.len());
         Ok(dependencies)
     }
+}
+
+// Helper function to extract project name from TOML document
+fn extract_project_name_from_doc(doc: &DocumentMut) -> Option<String> {
+    // Try project section first (Poetry 2.0)
+    if let Some(name) = doc
+        .get("project")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+    {
+        return Some(name.to_string());
+    }
+
+    // Then try tool.poetry
+    if let Some(name) = doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+    {
+        return Some(name.to_string());
+    }
+
+    None
 }

@@ -108,8 +108,23 @@ fn determine_if_package_project(doc: &DocumentMut, project_dir: &Path) -> bool {
             }
         })
         .unwrap_or(false);
-    if has_poetry_package_config {
-        debug!("Project has Poetry package configuration with src directory");
+
+    // OR: Check for Poetry packages section in any configuration
+    let has_poetry_packages = has_poetry_package_config
+        || doc
+            .get("tool")
+            .and_then(|t| t.get("poetry"))
+            .and_then(|poetry| poetry.get("packages"))
+            .is_some();
+
+    // Also check for packages configuration in Poetry 2.0 format
+    let has_poetry2_packages = doc
+        .get("project")
+        .and_then(|project| project.get("packages"))
+        .is_some();
+
+    if has_poetry_packages || has_poetry2_packages {
+        debug!("Project has Poetry package configuration");
         return true;
     }
 
@@ -376,5 +391,79 @@ version = "0.1.0"
 
         let result = update_build_system(&mut doc, temp_dir.path()).unwrap();
         assert!(!result);
+    }
+
+    #[test]
+    fn test_determine_if_package_project() {
+        // Test with package configuration
+        let content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+packages = [
+    { include = "src" }
+]
+"#;
+        let doc = content.parse::<DocumentMut>().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let result = determine_if_package_project(&doc, temp_dir.path());
+        assert!(
+            result,
+            "Should detect package project from Poetry packages config"
+        );
+
+        // Test with Poetry 2.0 format
+        let content2 = r#"
+[project]
+name = "test-project"
+version = "0.1.0"
+packages = [
+    { include = "src" }
+]
+"#;
+        let doc2 = content2.parse::<DocumentMut>().unwrap();
+        let result2 = determine_if_package_project(&doc2, temp_dir.path());
+        assert!(
+            result2,
+            "Should detect package project from Poetry 2.0 packages config"
+        );
+    }
+
+    #[test]
+    fn test_single_package_include() {
+        // Test with simple include format
+        let content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+packages = [
+    { include = "src" }
+]
+"#;
+        let doc = content.parse::<DocumentMut>().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let result = determine_if_package_project(&doc, temp_dir.path());
+        assert!(result, "Should detect package from single include format");
+    }
+
+    #[test]
+    fn test_multiple_package_includes() {
+        // Test with multiple includes
+        let content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+packages = [
+    { include = "src" },
+    { include = "lib" }
+]
+"#;
+        let doc = content.parse::<DocumentMut>().unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let result = determine_if_package_project(&doc, temp_dir.path());
+        assert!(result, "Should detect package from multiple includes");
     }
 }

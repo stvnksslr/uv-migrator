@@ -145,7 +145,9 @@ pub fn migrate_poetry_scripts(doc: &DocumentMut) -> Option<Table> {
     None
 }
 
-pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
+/// Updates the scripts in pyproject.toml
+/// Returns true if the project contains scripts
+pub fn update_scripts(project_dir: &Path) -> Result<bool, String> {
     let pyproject_path = project_dir.join("pyproject.toml");
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
 
@@ -167,10 +169,15 @@ pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
         }
     }
 
+    // Track if we found any scripts
+    let mut has_scripts = false;
+
     // Handle migration from old pyproject.toml if it exists
     if old_pyproject_path.exists() {
         let old_doc = read_and_parse_toml(&old_pyproject_path)?;
         if let Some(scripts_table) = migrate_poetry_scripts(&old_doc) {
+            has_scripts = !scripts_table.is_empty();
+
             update_section(
                 &mut doc,
                 &["project", "scripts"],
@@ -191,7 +198,7 @@ pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
     write_toml(&pyproject_path, &mut doc)?;
     info!("Successfully processed scripts in pyproject.toml");
 
-    Ok(())
+    Ok(has_scripts)
 }
 
 fn sanitize_script_name(name: &str) -> String {
@@ -305,7 +312,65 @@ pub fn update_uv_indices(project_dir: &Path, sources: &[(String, String)]) -> Re
         &["tool", "uv", "index"],
         Item::Value(Value::Array(index_array)),
     );
+
+    // Ensure the tool.uv section is properly formatted
+    if let Some(tool) = doc.get_mut("tool") {
+        if let Some(uv) = tool.get_mut("uv") {
+            if let Some(uv_table) = uv.as_table_mut() {
+                // Make sure the table is created with proper formatting
+                uv_table.set_implicit(true);
+            }
+        }
+    }
+
     write_toml(&pyproject_path, &mut doc)?;
+
+    // Verify the section was written
+    let content = std::fs::read_to_string(&pyproject_path)
+        .map_err(|e| format!("Failed to read updated pyproject.toml: {}", e))?;
+
+    if !content.contains("tool.uv") {
+        // If the section wasn't written properly, try a different approach
+        log::warn!(
+            "UV index section may not have been written correctly. Attempting alternative method."
+        );
+
+        // Read the TOML file again
+        let mut doc = read_and_parse_toml(&pyproject_path)?;
+
+        // Create a table for the UV section
+        let mut uv_table = Table::new();
+        uv_table.set_implicit(true);
+
+        // Create a table for the index section
+        let mut index_array = Array::new();
+        for (name, url) in sources {
+            let mut source_table = toml_edit::InlineTable::new();
+            source_table.insert("name", Value::String(Formatted::new(name.clone())));
+            source_table.insert("url", Value::String(Formatted::new(url.clone())));
+            index_array.push(Value::InlineTable(source_table));
+        }
+
+        // Add the index array to the UV table
+        uv_table.insert("index", Item::Value(Value::Array(index_array)));
+
+        // Make sure there's a tool section
+        if !doc.contains_key("tool") {
+            let mut tool_table = Table::new();
+            tool_table.insert("uv", Item::Table(uv_table));
+            doc.insert("tool", Item::Table(tool_table));
+        } else if let Some(tool) = doc.get_mut("tool").and_then(|t| t.as_table_mut()) {
+            tool.insert("uv", Item::Table(uv_table));
+        }
+
+        // Write the TOML back to the file
+        write_toml(&pyproject_path, &mut doc)?;
+    }
+
+    info!(
+        "Successfully migrated {} package sources to UV indices",
+        sources.len()
+    );
     Ok(())
 }
 
@@ -396,6 +461,62 @@ pub fn extract_poetry_sources(project_dir: &Path) -> Result<Vec<(String, String)
     }
 
     Ok(sources)
+}
+
+/// Extracts the project name from pyproject.toml
+pub fn extract_project_name(project_dir: &Path) -> Result<Option<String>, String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+    if !pyproject_path.exists() {
+        return Ok(None);
+    }
+
+    let doc = read_toml(&pyproject_path)?;
+
+    // Try project section first
+    if let Some(name) = doc
+        .get("project")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+    {
+        return Ok(Some(name.to_string()));
+    }
+
+    // Then try tool.poetry
+    if let Some(name) = doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+    {
+        return Ok(Some(name.to_string()));
+    }
+
+    // Finally try the old pyproject.toml
+    let old_pyproject_path = project_dir.join("old.pyproject.toml");
+    if old_pyproject_path.exists() {
+        let old_doc = read_toml(&old_pyproject_path)?;
+
+        // Try project section in old file
+        if let Some(name) = old_doc
+            .get("project")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+        {
+            return Ok(Some(name.to_string()));
+        }
+
+        // Try tool.poetry in old file
+        if let Some(name) = old_doc
+            .get("tool")
+            .and_then(|t| t.get("poetry"))
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+        {
+            return Ok(Some(name.to_string()));
+        }
+    }
+
+    Ok(None)
 }
 
 #[cfg(test)]
