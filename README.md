@@ -45,16 +45,21 @@ Project formats
 ## Usage
 
 ```sh
+❯ uv-migrator -h
+A tool for migrating Python projects to use the uv package manager
+
 Usage: uv-migrator [OPTIONS] [PATH]
 
 Arguments:
-  [PATH]  The path to the project directory to migrate
+  [PATH]  The path to the project directory to migrate [default: .]
 
 Options:
       --merge-groups                 Merge all dependency groups into the dev group
       --import-global-pip-conf       Import extra index URLs from ~/.pip/pip.conf
       --import-index <import-index>  Additional index URL to import
       --disable-restore              Disable automatic file restore on error
+      --self-update                  Update uv-migrator to the latest version
+      --check-update                 Check for updates without installing them
   -h, --help                         Print help (see more with '--help')
   -V, --version                      Print version
 
@@ -73,6 +78,12 @@ uv-migrator . --import-global-pip-conf
 
 # Migrate without automatic restore on error
 uv-migrator . --disable-restore
+
+# Check for updates without installing them
+uv-migrator --check-update
+
+# Update to the latest version
+uv-migrator --self-update
 
 For more information and documentation, visit:
 https://github.com/stvnksslr/uv-migrator
