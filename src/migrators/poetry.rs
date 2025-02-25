@@ -15,43 +15,99 @@ impl PoetryMigrationSource {
         let pyproject_path = project_dir.join("pyproject.toml");
         let doc = read_toml(&pyproject_path)?;
 
-        // First, check the project section (Poetry 2.0 style)
-        if let Some(project) = doc.get("project") {
-            // If project section has dependencies, it's likely a Poetry 2.0 package
-            if project.get("dependencies").is_some() {
-                return Ok(PoetryProjectType::Package);
-            }
+        // First, check for actual package structure on disk
+        if Self::verify_real_package_structure(project_dir) {
+            debug!("Detected package structure on disk");
+            return Ok(PoetryProjectType::Package);
         }
 
-        // Traditional Poetry style detection
-        if let Some(tool) = doc.get("tool") {
-            if let Some(poetry) = tool.get("poetry") {
-                let is_package = poetry
-                    .get("packages")
-                    .and_then(|packages| packages.as_array())
-                    .is_some_and(|packages| {
-                        packages.iter().any(|pkg| {
-                            pkg.as_inline_table()
-                                .and_then(|t| t.get("include"))
-                                .and_then(|i| i.as_str())
-                                == Some("src")
-                        })
-                    });
+        // Next, check pyproject.toml for package configuration
+        let has_package_config = Self::has_package_configuration(&doc);
 
-                debug!(
-                    "Poetry project type detected: {}",
-                    if is_package { "package" } else { "application" }
-                );
-                return Ok(if is_package {
-                    PoetryProjectType::Package
-                } else {
-                    PoetryProjectType::Application
-                });
-            }
+        if has_package_config {
+            debug!("Package configuration found in pyproject.toml");
+            return Ok(PoetryProjectType::Package);
         }
 
-        debug!("No package configuration found, defaulting to application");
+        // Check if setup.py exists, which would indicate a package
+        if project_dir.join("setup.py").exists() {
+            debug!("setup.py found, treating as package");
+            return Ok(PoetryProjectType::Package);
+        }
+
+        debug!("No package indicators found, defaulting to application");
         Ok(PoetryProjectType::Application)
+    }
+
+    /// Verifies if the project has a real package structure on disk
+    pub fn verify_real_package_structure(project_dir: &Path) -> bool {
+        // Check for "src" directory structure
+        let src_dir = project_dir.join("src");
+        if src_dir.exists() && src_dir.is_dir() {
+            // Check if there are any Python modules (directories with __init__.py)
+            // under the src directory
+            if let Ok(entries) = std::fs::read_dir(&src_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() && path.join("__init__.py").exists() {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Check for package with the same name as the project directory
+        if let Some(project_name) = project_dir.file_name().and_then(|name| name.to_str()) {
+            let pkg_dir = project_dir.join(project_name);
+            if pkg_dir.exists() && pkg_dir.is_dir() && pkg_dir.join("__init__.py").exists() {
+                return true;
+            }
+
+            // Also try package name with underscores instead of dashes
+            let pkg_name_underscores = project_name.replace('-', "_");
+            if pkg_name_underscores != project_name {
+                let pkg_dir = project_dir.join(&pkg_name_underscores);
+                if pkg_dir.exists() && pkg_dir.is_dir() && pkg_dir.join("__init__.py").exists() {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Checks if the project has package configuration in pyproject.toml
+    fn has_package_configuration(doc: &DocumentMut) -> bool {
+        // Check for Poetry 1.0 style package configuration
+        let has_poetry_packages = doc
+            .get("tool")
+            .and_then(|tool| tool.get("poetry"))
+            .and_then(|poetry| poetry.get("packages"))
+            .and_then(|packages| packages.as_array())
+            .is_some_and(|packages| !packages.is_empty());
+
+        // Check for Poetry 2.0 style project with package indicators
+        let has_pep621_package_indicators = doc
+            .get("project")
+            .map(|project| {
+                // Check for typical package indicators in PEP 621 format
+                if project.get("dependencies").is_some() {
+                    let has_urls = project.get("urls").is_some();
+                    let has_classifiers = project.get("classifiers").is_some();
+                    let has_keywords = project.get("keywords").is_some();
+
+                    // If it has multiple of these fields, it's likely a package
+                    (has_urls as u8) + (has_classifiers as u8) + (has_keywords as u8) >= 2
+                } else {
+                    false
+                }
+            })
+            .unwrap_or(false);
+
+        // Check for build-system section which is common for packages
+        let has_build_system = doc.get("build-system").is_some();
+
+        has_poetry_packages || has_pep621_package_indicators || has_build_system
     }
 
     pub fn extract_python_version(project_dir: &Path) -> Result<Option<String>> {
@@ -129,24 +185,37 @@ impl PoetryMigrationSource {
         Ok(None)
     }
 
-    fn parse_poetry_v2_dep(&self, dep_str: &str) -> (String, Option<String>) {
-        // Split the dependency string to extract name and version
-        let parts: Vec<&str> = dep_str.split_whitespace().collect();
+    fn parse_poetry_v2_dep(&self, dep_str: &str) -> (String, Option<String>, Option<Vec<String>>) {
+        // First, handle if there's a version constraint in parentheses
+        let (base_dep, version) = if let Some(ver_idx) = dep_str.find('(') {
+            let (base, ver_part) = dep_str.split_at(ver_idx);
+            (
+                base.trim().to_string(),
+                Some(ver_part.trim_matches(&['(', ')'][..]).trim().to_string()),
+            )
+        } else {
+            (dep_str.trim().to_string(), None)
+        };
 
-        match parts.len() {
-            1 => (parts[0].to_string(), None), // No version specified
-            2 => {
-                // Version is specified, potentially with comparison operators
-                let name = parts[0].to_string();
-                let version = parts[1].trim_matches(&['(', ')'][..]).to_string();
-                (name, Some(version))
+        // Then, extract extras if present
+        let (name, extras) = if let Some(extras_start) = base_dep.find('[') {
+            if let Some(extras_end) = base_dep.find(']') {
+                let (name_part, extras_part) = base_dep.split_at(extras_start);
+                let extras_str = &extras_part[1..extras_end - extras_start];
+                let extras_vec = extras_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect::<Vec<_>>();
+
+                (name_part.trim().to_string(), Some(extras_vec))
+            } else {
+                (base_dep, None)
             }
-            _ => {
-                // Fallback for unexpected formats
-                debug!("Unexpected dependency format: {}", dep_str);
-                (dep_str.to_string(), None)
-            }
-        }
+        } else {
+            (base_dep, None)
+        };
+
+        (name, version, extras)
     }
 
     fn format_dependency(
@@ -165,17 +234,22 @@ impl PoetryMigrationSource {
                 let v = v.value().trim();
                 if v == "*" { None } else { Some(v.to_string()) }
             }
-            Item::Value(Value::InlineTable(t)) => t.get("version").and_then(|v| match v {
-                Value::String(s) => {
-                    let version = s.value().trim();
-                    if version == "*" {
-                        None
-                    } else {
-                        Some(version.to_string())
+            Item::Value(Value::InlineTable(t)) => {
+                let version_opt = t.get("version").and_then(|v| match v {
+                    Value::String(s) => {
+                        let version = s.value().trim();
+                        if version == "*" {
+                            None
+                        } else {
+                            Some(version.to_string())
+                        }
                     }
-                }
-                _ => None,
-            }),
+                    _ => None,
+                });
+
+                // Store version to return later
+                version_opt
+            }
             Item::Table(t) => t.get("version").and_then(|v| match v {
                 Item::Value(Value::String(s)) => {
                     let version = s.value().trim();
@@ -190,11 +264,50 @@ impl PoetryMigrationSource {
             _ => None,
         };
 
+        // Extract extras if available
+        let extras = match value {
+            Item::Value(Value::InlineTable(t)) => t.get("extras").and_then(|e| match e {
+                Value::Array(extras_array) => {
+                    let extras = extras_array
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>();
+
+                    if extras.is_empty() {
+                        None
+                    } else {
+                        Some(extras)
+                    }
+                }
+                _ => None,
+            }),
+            Item::Table(t) => t.get("extras").and_then(|e| match e {
+                Item::Value(Value::Array(extras_array)) => {
+                    let extras = extras_array
+                        .iter()
+                        .filter_map(|v| match v {
+                            Value::String(s) => Some(s.value().to_string()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+
+                    if extras.is_empty() {
+                        None
+                    } else {
+                        Some(extras)
+                    }
+                }
+                _ => None,
+            }),
+            _ => None,
+        };
+
         Some(Dependency {
             name: name.to_string(),
             version,
             dep_type,
             environment_markers: None,
+            extras,
         })
     }
 }
@@ -231,14 +344,15 @@ impl MigrationSource for PoetryMigrationSource {
                 debug!("Processing main dependencies from project section");
                 for dep_value in proj_deps.iter() {
                     if let Some(dep_str) = dep_value.as_str() {
-                        // Split the dependency string into name and version
-                        let (name, version) = self.parse_poetry_v2_dep(dep_str);
+                        // Split the dependency string into name, version, and extras
+                        let (name, version, extras) = self.parse_poetry_v2_dep(dep_str);
 
                         let dep = Dependency {
                             name,
                             version,
                             dep_type: DependencyType::Main,
                             environment_markers: None,
+                            extras,
                         };
 
                         dependencies.push(dep);

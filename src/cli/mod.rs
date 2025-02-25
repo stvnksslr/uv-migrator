@@ -22,10 +22,18 @@ pub struct Args {
 
     /// Whether to disable automatic restore on error
     pub disable_restore: bool,
+
+    /// Whether to self-update
+    #[cfg(feature = "self_update")]
+    pub self_update: bool,
+
+    /// Whether to check for updates without updating
+    #[cfg(feature = "self_update")]
+    pub check_update: bool,
 }
 
 /// Configures and runs the CLI
-pub fn run() -> Result<()> {
+pub fn run() -> Result<Args> {
     let mut cmd = Command::new("uv-migrator")
         .version(env!("CARGO_PKG_VERSION"))
         .about("A tool for migrating Python projects to use the uv package manager")
@@ -109,6 +117,17 @@ pub fn run() -> Result<()> {
                 )
                 .action(ArgAction::SetTrue)
         );
+
+        cmd = cmd.arg(
+            Arg::new("check_update")
+                .long("check-update")
+                .help("Check for updates without installing them")
+                .long_help(
+                    "Checks if a newer version of uv-migrator is available on GitHub releases, \
+                    but does not install the update. Use --self-update to both check and install.",
+                )
+                .action(ArgAction::SetTrue),
+        );
     }
 
     let after_help = "EXAMPLES:
@@ -126,6 +145,12 @@ uv-migrator . --import-global-pip-conf
 
 # Migrate without automatic restore on error
 uv-migrator . --disable-restore
+
+# Check for updates without installing them
+uv-migrator --check-update
+
+# Update to the latest version
+uv-migrator --self-update
 
 For more information and documentation, visit:
 https://github.com/stvnksslr/uv-migrator";
@@ -147,13 +172,25 @@ https://github.com/stvnksslr/uv-migrator";
             .cloned()
             .collect(),
         disable_restore: matches.get_flag("disable-restore"),
+        #[cfg(feature = "self_update")]
+        self_update: matches.get_flag("self_update"),
+        #[cfg(feature = "self_update")]
+        check_update: matches.get_flag("check_update"),
     };
 
-    execute(args)
+    execute(&args)?;
+    Ok(args)
 }
 
 /// Execute the migration with the provided arguments
-pub fn execute(args: Args) -> Result<()> {
+pub fn execute(args: &Args) -> Result<()> {
+    // If we're only checking for updates or doing a self-update,
+    // we don't need to run the migration
+    #[cfg(feature = "self_update")]
+    if args.self_update || args.check_update {
+        return Ok(());
+    }
+
     info!("Starting UV migrator...");
 
     // Check UV requirements before proceeding

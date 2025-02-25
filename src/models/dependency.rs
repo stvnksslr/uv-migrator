@@ -12,6 +12,9 @@ pub struct Dependency {
 
     /// Optional environment markers (e.g. "python_version > '3.7'")
     pub environment_markers: Option<String>,
+
+    /// Optional extras (e.g. ["s3", "test"])
+    pub extras: Option<Vec<String>>,
 }
 
 /// Represents the type of dependency
@@ -63,6 +66,7 @@ impl Dependency {
             version: None,
             dep_type,
             environment_markers: None,
+            extras: None,
         }
     }
 
@@ -74,6 +78,7 @@ impl Dependency {
             version: Some(version),
             dep_type,
             environment_markers: None,
+            extras: None,
         }
     }
 
@@ -81,6 +86,13 @@ impl Dependency {
     #[allow(dead_code)]
     pub fn with_markers(mut self, markers: String) -> Self {
         self.environment_markers = Some(markers);
+        self
+    }
+
+    /// Adds extras to the dependency
+    #[allow(dead_code)]
+    pub fn with_extras(mut self, extras: Vec<String>) -> Self {
+        self.extras = Some(extras);
         self
     }
 }

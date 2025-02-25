@@ -101,6 +101,7 @@ impl SetupPyMigrationSource {
                     version,
                     dep_type: dep_type.clone(),
                     environment_markers: None,
+                    extras: None,
                 });
             }
         }

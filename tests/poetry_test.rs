@@ -102,6 +102,7 @@ pytest-sugar = "^1.0.0"
 /// 2. Multiple dev groups (dev, code-quality) are handled properly
 /// 3. All non-main dependencies are marked as dev dependencies
 /// 4. Dependencies from different groups maintain their version specifications
+/// 5. Extras are correctly preserved and propagated
 #[test]
 fn test_extract_multiple_groups() {
     let content = r#"
@@ -112,9 +113,11 @@ version = "0.1.0"
 [tool.poetry.dependencies]
 python = "^3.11"
 fastapi = "^0.111.0"
+django = { extras = ["rest"], version = "^4.2.0" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
+pytest-django = { extras = ["coverage"], version = "^4.5.2" }
 
 [tool.poetry.group.code-quality.dependencies]
 ruff = "^0.5.0"
@@ -125,23 +128,41 @@ mypy = "^1.11.1"
     let source = PoetryMigrationSource;
     let dependencies = source.extract_dependencies(&project_dir).unwrap();
 
-    assert_eq!(dependencies.len(), 4); // 1 main + 1 dev + 2 code-quality
+    assert_eq!(dependencies.len(), 6); // 2 main + 2 dev + 2 code-quality
 
     // Check main dependencies
     let main_deps: Vec<_> = dependencies
         .iter()
         .filter(|d| matches!(d.dep_type, DependencyType::Main))
         .collect();
-    assert_eq!(main_deps.len(), 1);
-    assert_eq!(main_deps[0].name, "fastapi");
+    assert_eq!(main_deps.len(), 2);
+
+    let fastapi_dep = main_deps.iter().find(|d| d.name == "fastapi").unwrap();
+    assert_eq!(fastapi_dep.version, Some("^0.111.0".to_string()));
+    assert!(fastapi_dep.extras.is_none());
+
+    let django_dep = main_deps.iter().find(|d| d.name == "django").unwrap();
+    assert_eq!(django_dep.version, Some("^4.2.0".to_string()));
+    assert!(django_dep.extras.is_some());
+    assert_eq!(django_dep.extras.as_ref().unwrap().len(), 1);
+    assert_eq!(django_dep.extras.as_ref().unwrap()[0], "rest");
 
     // Check dev dependencies
     let dev_deps: Vec<_> = dependencies
         .iter()
         .filter(|d| matches!(d.dep_type, DependencyType::Dev))
         .collect();
-    assert_eq!(dev_deps.len(), 1);
-    assert_eq!(dev_deps[0].name, "pytest");
+    assert_eq!(dev_deps.len(), 2);
+
+    let pytest_dep = dev_deps.iter().find(|d| d.name == "pytest").unwrap();
+    assert_eq!(pytest_dep.version, Some("^8.2.2".to_string()));
+    assert!(pytest_dep.extras.is_none());
+
+    let pytest_django_dep = dev_deps.iter().find(|d| d.name == "pytest-django").unwrap();
+    assert_eq!(pytest_django_dep.version, Some("^4.5.2".to_string()));
+    assert!(pytest_django_dep.extras.is_some());
+    assert_eq!(pytest_django_dep.extras.as_ref().unwrap().len(), 1);
+    assert_eq!(pytest_django_dep.extras.as_ref().unwrap()[0], "coverage");
 
     // Check code-quality group dependencies
     let code_quality_deps: Vec<_> = dependencies
@@ -178,8 +199,19 @@ aiohttp = { extras = ["speedups"], version = "^3.10.5" }
 
     assert_eq!(dependencies.len(), 2);
 
+    // Check that uvicorn dependency has extras correctly extracted
     let uvicorn_dep = dependencies.iter().find(|d| d.name == "uvicorn").unwrap();
     assert_eq!(uvicorn_dep.version, Some("^0.30.1".to_string()));
+    assert!(uvicorn_dep.extras.is_some());
+    assert_eq!(uvicorn_dep.extras.as_ref().unwrap().len(), 1);
+    assert_eq!(uvicorn_dep.extras.as_ref().unwrap()[0], "standard");
+
+    // Check that aiohttp dependency has extras correctly extracted
+    let aiohttp_dep = dependencies.iter().find(|d| d.name == "aiohttp").unwrap();
+    assert_eq!(aiohttp_dep.version, Some("^3.10.5".to_string()));
+    assert!(aiohttp_dep.extras.is_some());
+    assert_eq!(aiohttp_dep.extras.as_ref().unwrap().len(), 1);
+    assert_eq!(aiohttp_dep.extras.as_ref().unwrap()[0], "speedups");
 }
 
 /// Test handling of dependencies without version specifications.
@@ -868,4 +900,54 @@ description = "Add your description here"
     assert!(result.contains(r#"description = "Modern Python project using Poetry 2.0""#));
 
     Ok(())
+}
+
+#[test]
+fn test_poetry_v2_dependency_with_extras() {
+    let content = r#"
+[project]
+name = "test-extras"
+version = "0.1.0"
+description = "Testing extras parsing"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ibis-framework[duckdb,polars,sqlite] (>=10.1.0,<11.0.0)",
+    "requests[security] (>=2.31.0)",
+    "django[rest] (^4.2.0)"
+]
+"#;
+    let (_temp_dir, project_dir) = create_test_project(content);
+
+    let source = PoetryMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    assert_eq!(dependencies.len(), 3);
+
+    // Check that ibis-framework dependency has extras correctly extracted
+    let ibis_dep = dependencies
+        .iter()
+        .find(|d| d.name == "ibis-framework")
+        .unwrap();
+    assert_eq!(ibis_dep.version, Some(">=10.1.0,<11.0.0".to_string()));
+    assert!(ibis_dep.extras.is_some());
+    let ibis_extras = ibis_dep.extras.as_ref().unwrap();
+    assert_eq!(ibis_extras.len(), 3);
+    assert!(ibis_extras.contains(&"duckdb".to_string()));
+    assert!(ibis_extras.contains(&"polars".to_string()));
+    assert!(ibis_extras.contains(&"sqlite".to_string()));
+
+    // Check that requests dependency has extras correctly extracted
+    let requests_dep = dependencies.iter().find(|d| d.name == "requests").unwrap();
+    assert_eq!(requests_dep.version, Some(">=2.31.0".to_string()));
+    assert!(requests_dep.extras.is_some());
+    assert_eq!(requests_dep.extras.as_ref().unwrap().len(), 1);
+    assert_eq!(requests_dep.extras.as_ref().unwrap()[0], "security");
+
+    // Check that django dependency has extras correctly extracted
+    let django_dep = dependencies.iter().find(|d| d.name == "django").unwrap();
+    assert_eq!(django_dep.version, Some("^4.2.0".to_string()));
+    assert!(django_dep.extras.is_some());
+    assert_eq!(django_dep.extras.as_ref().unwrap().len(), 1);
+    assert_eq!(django_dep.extras.as_ref().unwrap()[0], "rest");
 }

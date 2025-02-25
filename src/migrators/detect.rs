@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::migrators::pipenv::PipenvMigrationSource;
 use crate::migrators::poetry::PoetryMigrationSource;
-use crate::models::project::{PoetryProjectType, ProjectType};
+use crate::models::project::ProjectType;
 use log::info;
 use std::path::Path;
 
@@ -15,7 +15,10 @@ pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType> {
                 if let Some(project) = pyproject.get("project") {
                     if project.get("dependencies").is_some() {
                         info!("Detected Poetry 2.0 project");
-                        return Ok(ProjectType::Poetry(PoetryProjectType::Package));
+
+                        // Don't automatically assume it's a package; let PoetryMigrationSource determine that
+                        let poetry_type = PoetryMigrationSource::detect_project_type(project_dir)?;
+                        return Ok(ProjectType::Poetry(poetry_type));
                     }
                 }
             }

@@ -95,6 +95,7 @@ impl RequirementsMigrationSource {
                         version: dep.version,
                         dep_type: dep_type.clone(),
                         environment_markers: dep.environment_markers,
+                        extras: dep.extras,
                     });
                 }
                 Ok(None) => debug!(
@@ -189,6 +190,7 @@ impl RequirementsMigrationSource {
             version,
             dep_type: DependencyType::Main, // This will be overridden by the caller
             environment_markers,
+            extras: None,
         }))
     }
 

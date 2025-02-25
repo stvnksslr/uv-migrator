@@ -9,12 +9,13 @@ use log::error;
 use std::process::exit;
 
 #[cfg(feature = "self_update")]
-fn update_check() -> crate::error::Result<()> {
-    let should_update = std::env::var("UV_MIGRATOR_UPDATE")
-        .map(|v| v != "0")
-        .unwrap_or(true);
-    if should_update {
+fn update_check(args: &cli::Args) -> crate::error::Result<()> {
+    if args.self_update {
         if let Err(e) = utils::update() {
+            eprintln!("Update failed: {}", e);
+        }
+    } else if args.check_update {
+        if let Err(e) = utils::check_for_updates() {
             eprintln!("Update check failed: {}", e);
         }
     }
@@ -22,7 +23,7 @@ fn update_check() -> crate::error::Result<()> {
 }
 
 #[cfg(not(feature = "self_update"))]
-fn update_check() -> crate::error::Result<()> {
+fn update_check(_args: &cli::Args) -> crate::error::Result<()> {
     Ok(())
 }
 
@@ -40,9 +41,11 @@ fn main() {
 }
 
 fn run() -> crate::error::Result<()> {
-    // Check for updates if enabled
-    update_check()?;
+    // Run the CLI and get arguments
+    let args = cli::run()?;
 
-    // Run the CLI
-    cli::run()
+    // Check for updates if requested via flags
+    update_check(&args)?;
+
+    Ok(())
 }

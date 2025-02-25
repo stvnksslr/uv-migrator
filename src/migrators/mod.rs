@@ -200,37 +200,48 @@ impl MigrationTool for UvTool {
     }
 }
 
+// These functions have been moved to common.rs
+pub use common::{
+    merge_dependency_groups, perform_common_migrations, perform_pipenv_migration,
+    perform_poetry_migration, perform_requirements_migration, perform_setup_py_migration,
+};
+
 /// Formats a dependency for use with UV command line
-fn format_dependency(dep: &Dependency) -> String {
+pub fn format_dependency(dep: &Dependency) -> String {
+    // Start with base name and add extras if present
+    let mut base_name = dep.name.clone();
+    if let Some(extras) = &dep.extras {
+        if !extras.is_empty() {
+            let extras_str = extras.join(",");
+            base_name = format!("{}[{}]", base_name, extras_str);
+        }
+    }
+
+    // Add version formatting
     let mut dep_str = if let Some(version) = &dep.version {
         let version = version.trim();
         if version.contains(',') || version.starts_with("~=") {
-            format!("{}{}", dep.name, version)
+            format!("{}{}", base_name, version)
         } else if let Some(stripped) = version.strip_prefix('~') {
-            format!("{}~={}", dep.name, stripped)
+            format!("{}~={}", base_name, stripped)
         } else if let Some(stripped) = version.strip_prefix('^') {
-            format!("{}>={}", dep.name, stripped)
+            format!("{}>={}", base_name, stripped)
         } else if version.starts_with(['>', '<', '=']) {
-            format!("{}{}", dep.name, version)
+            format!("{}{}", base_name, version)
         } else {
-            format!("{}=={}", dep.name, version)
+            format!("{}=={}", base_name, version)
         }
     } else {
-        dep.name.clone()
+        base_name
     };
 
+    // Add environment markers if present
     if let Some(markers) = &dep.environment_markers {
         dep_str.push_str(&format!("; {}", markers));
     }
 
     dep_str
 }
-
-// These functions have been moved to common.rs
-pub use common::{
-    merge_dependency_groups, perform_common_migrations, perform_pipenv_migration,
-    perform_poetry_migration, perform_requirements_migration, perform_setup_py_migration,
-};
 
 /// Runs the migration process
 pub fn run_migration(
@@ -270,7 +281,25 @@ pub fn run_migration(
 
         // Initialize UV project
         let migration_tool = UvTool;
-        migration_tool.prepare_project(project_dir, &mut file_tracker, &project_type)?;
+
+        // For Poetry projects, override Package type to Application if there's no actual package structure
+        let adjusted_project_type = match &project_type {
+            ProjectType::Poetry(poetry_type) => {
+                if matches!(poetry_type, PoetryProjectType::Package)
+                    && !poetry::PoetryMigrationSource::verify_real_package_structure(project_dir)
+                {
+                    info!(
+                        "Project has package configuration but lacks actual package structure - treating as application"
+                    );
+                    ProjectType::Poetry(PoetryProjectType::Application)
+                } else {
+                    project_type.clone()
+                }
+            }
+            _ => project_type.clone(),
+        };
+
+        migration_tool.prepare_project(project_dir, &mut file_tracker, &adjusted_project_type)?;
         info!("Project initialized with UV");
 
         // Add dependencies

@@ -57,6 +57,7 @@ impl PipenvMigrationSource {
             version,
             dep_type,
             environment_markers: markers,
+            extras: None,
         }))
     }
 
@@ -86,6 +87,7 @@ impl PipenvMigrationSource {
             version,
             dep_type,
             environment_markers: markers,
+            extras: None,
         }))
     }
 

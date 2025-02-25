@@ -91,27 +91,58 @@ pub fn update_url(project_dir: &Path, url: &str) -> Result<(), String> {
 }
 
 pub fn migrate_poetry_scripts(doc: &DocumentMut) -> Option<Table> {
-    let poetry_scripts = doc.get("tool")?.get("poetry")?.get("scripts")?.as_table()?;
+    // First try looking in the old Poetry style (tool.poetry.scripts)
+    if let Some(poetry_scripts) = doc
+        .get("tool")
+        .and_then(|tool| tool.get("poetry"))
+        .and_then(|poetry| poetry.get("scripts"))
+        .and_then(|scripts| scripts.as_table())
+    {
+        let mut scripts_table = Table::new();
+        scripts_table.set_implicit(true);
 
-    let mut scripts_table = Table::new();
-    scripts_table.set_implicit(true);
+        for (script_name, script_value) in poetry_scripts.iter() {
+            if let Some(script_str) = script_value.as_str() {
+                let sanitized_name = sanitize_script_name(script_name);
+                let converted_script = convert_script_format(script_str);
+                scripts_table.insert(
+                    &sanitized_name,
+                    toml_edit::Item::Value(Value::String(Formatted::new(converted_script))),
+                );
+            }
+        }
 
-    for (script_name, script_value) in poetry_scripts.iter() {
-        if let Some(script_str) = script_value.as_str() {
-            let sanitized_name = sanitize_script_name(script_name);
-            let converted_script = convert_script_format(script_str);
-            scripts_table.insert(
-                &sanitized_name,
-                toml_edit::Item::Value(Value::String(Formatted::new(converted_script))),
-            );
+        if !scripts_table.is_empty() {
+            return Some(scripts_table);
         }
     }
 
-    if !scripts_table.is_empty() {
-        Some(scripts_table)
-    } else {
-        None
+    // Then check for Poetry 2.0 style (project.scripts)
+    if let Some(project_scripts) = doc
+        .get("project")
+        .and_then(|project| project.get("scripts"))
+        .and_then(|scripts| scripts.as_table())
+    {
+        let mut scripts_table = Table::new();
+        scripts_table.set_implicit(true);
+
+        for (script_name, script_value) in project_scripts.iter() {
+            if let Some(script_str) = script_value.as_str() {
+                let sanitized_name = sanitize_script_name(script_name);
+                let converted_script = convert_script_format(script_str);
+                scripts_table.insert(
+                    &sanitized_name,
+                    toml_edit::Item::Value(Value::String(Formatted::new(converted_script))),
+                );
+            }
+        }
+
+        if !scripts_table.is_empty() {
+            return Some(scripts_table);
+        }
     }
+
+    None
 }
 
 pub fn update_scripts(project_dir: &Path) -> Result<(), String> {

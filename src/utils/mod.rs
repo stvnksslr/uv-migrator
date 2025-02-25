@@ -13,7 +13,7 @@ pub mod version;
 #[cfg(feature = "self_update")]
 mod update;
 #[cfg(feature = "self_update")]
-pub use update::update;
+pub use update::{check_for_updates, update};
 
 // Re-export commonly used items
 pub use pip::parse_pip_conf;
