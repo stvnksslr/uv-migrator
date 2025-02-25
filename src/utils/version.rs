@@ -42,7 +42,7 @@ fn clean_version(version: &str) -> Option<String> {
 /// * `Result<Option<String>, String>` - The version if found, None if not found, or an error
 pub fn extract_version(project_dir: &Path) -> Result<Option<String>, String> {
     // First try to get version from setup.py
-    if let Some(version) = extract_version_from_setup_py(project_dir)? {
+    if let Some(version) = extract_version_from_setup_py(project_dir).map_err(|e| e.to_string())? {
         debug!("Found version in setup.py: {}", version);
         return Ok(Some(version));
     }
@@ -63,14 +63,17 @@ pub fn extract_version(project_dir: &Path) -> Result<Option<String>, String> {
 }
 
 /// Extracts version from setup.py file
-fn extract_version_from_setup_py(project_dir: &Path) -> Result<Option<String>, String> {
+fn extract_version_from_setup_py(project_dir: &Path) -> crate::error::Result<Option<String>> {
     let setup_py_path = project_dir.join("setup.py");
     if !setup_py_path.exists() {
         return Ok(None);
     }
 
-    let content = fs::read_to_string(&setup_py_path)
-        .map_err(|e| format!("Failed to read setup.py: {}", e))?;
+    let content =
+        fs::read_to_string(&setup_py_path).map_err(|e| crate::error::Error::FileOperation {
+            path: setup_py_path.clone(),
+            message: format!("Failed to read setup.py: {}", e),
+        })?;
 
     // Look for version in setup() call
     if let Some(start_idx) = content.find("setup(") {

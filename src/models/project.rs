@@ -1,6 +1,28 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
+/// Represents a detected project type
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProjectType {
+    /// Poetry project (application or package)
+    Poetry(PoetryProjectType),
+    /// Pipenv project
+    Pipenv,
+    /// Requirements.txt based project
+    Requirements,
+    /// Setup.py based project
+    SetupPy,
+}
+
+/// Distinguishes between Poetry application and package projects
+#[derive(Debug, Clone, PartialEq)]
+pub enum PoetryProjectType {
+    /// Poetry application project (no packages section)
+    Application,
+    /// Poetry package project (has packages section)
+    Package,
+}
+
 /// Represents the entire pyproject.toml file structure
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)] // Fields used through Serde deserialization
@@ -29,7 +51,7 @@ pub struct Project {
     pub dependencies: Option<Vec<String>>,
 }
 
-/// Represents an author configuration (for Poetry 2.0 style)
+/// Represents an author configuration
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)] // Fields used through Serde deserialization
 pub struct AuthorConfig {
