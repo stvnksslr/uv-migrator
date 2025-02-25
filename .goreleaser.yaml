@@ -20,7 +20,7 @@ builds:
     binary: uv-migrator
 
 archives:
-  - format: tar.gz
+  - formats: [ 'tar.gz' ]
     files:
       - none*
     name_template: >-
