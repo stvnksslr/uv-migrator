@@ -3,12 +3,12 @@ use log::{debug, info};
 use std::path::Path;
 use toml_edit::{Array, DocumentMut, Formatted, Item, Table, Value};
 
+/// Reads a TOML file and returns its content as a DocumentMut.
+///
+/// This function delegates to the utility function in toml.rs to avoid
+/// code duplication and ensure consistent error handling.
 fn read_and_parse_toml(path: &Path) -> Result<DocumentMut, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-    content
-        .parse::<DocumentMut>()
-        .map_err(|e| format!("Failed to parse TOML: {}", e))
+    read_toml(path)
 }
 
 pub fn update_pyproject_toml(project_dir: &Path, _extra_urls: &[String]) -> Result<(), String> {
@@ -91,30 +91,63 @@ pub fn update_url(project_dir: &Path, url: &str) -> Result<(), String> {
 }
 
 pub fn migrate_poetry_scripts(doc: &DocumentMut) -> Option<Table> {
-    let poetry_scripts = doc.get("tool")?.get("poetry")?.get("scripts")?.as_table()?;
+    // First try looking in the old Poetry style (tool.poetry.scripts)
+    if let Some(poetry_scripts) = doc
+        .get("tool")
+        .and_then(|tool| tool.get("poetry"))
+        .and_then(|poetry| poetry.get("scripts"))
+        .and_then(|scripts| scripts.as_table())
+    {
+        let mut scripts_table = Table::new();
+        scripts_table.set_implicit(true);
 
-    let mut scripts_table = Table::new();
-    scripts_table.set_implicit(true);
+        for (script_name, script_value) in poetry_scripts.iter() {
+            if let Some(script_str) = script_value.as_str() {
+                let sanitized_name = sanitize_script_name(script_name);
+                let converted_script = convert_script_format(script_str);
+                scripts_table.insert(
+                    &sanitized_name,
+                    toml_edit::Item::Value(Value::String(Formatted::new(converted_script))),
+                );
+            }
+        }
 
-    for (script_name, script_value) in poetry_scripts.iter() {
-        if let Some(script_str) = script_value.as_str() {
-            let sanitized_name = sanitize_script_name(script_name);
-            let converted_script = convert_script_format(script_str);
-            scripts_table.insert(
-                &sanitized_name,
-                toml_edit::Item::Value(Value::String(Formatted::new(converted_script))),
-            );
+        if !scripts_table.is_empty() {
+            return Some(scripts_table);
         }
     }
 
-    if !scripts_table.is_empty() {
-        Some(scripts_table)
-    } else {
-        None
+    // Then check for Poetry 2.0 style (project.scripts)
+    if let Some(project_scripts) = doc
+        .get("project")
+        .and_then(|project| project.get("scripts"))
+        .and_then(|scripts| scripts.as_table())
+    {
+        let mut scripts_table = Table::new();
+        scripts_table.set_implicit(true);
+
+        for (script_name, script_value) in project_scripts.iter() {
+            if let Some(script_str) = script_value.as_str() {
+                let sanitized_name = sanitize_script_name(script_name);
+                let converted_script = convert_script_format(script_str);
+                scripts_table.insert(
+                    &sanitized_name,
+                    toml_edit::Item::Value(Value::String(Formatted::new(converted_script))),
+                );
+            }
+        }
+
+        if !scripts_table.is_empty() {
+            return Some(scripts_table);
+        }
     }
+
+    None
 }
 
-pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
+/// Updates the scripts in pyproject.toml
+/// Returns true if the project contains scripts
+pub fn update_scripts(project_dir: &Path) -> Result<bool, String> {
     let pyproject_path = project_dir.join("pyproject.toml");
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
 
@@ -136,10 +169,15 @@ pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
         }
     }
 
+    // Track if we found any scripts
+    let mut has_scripts = false;
+
     // Handle migration from old pyproject.toml if it exists
     if old_pyproject_path.exists() {
         let old_doc = read_and_parse_toml(&old_pyproject_path)?;
         if let Some(scripts_table) = migrate_poetry_scripts(&old_doc) {
+            has_scripts = !scripts_table.is_empty();
+
             update_section(
                 &mut doc,
                 &["project", "scripts"],
@@ -160,7 +198,7 @@ pub fn update_scripts(project_dir: &Path) -> Result<(), String> {
     write_toml(&pyproject_path, &mut doc)?;
     info!("Successfully processed scripts in pyproject.toml");
 
-    Ok(())
+    Ok(has_scripts)
 }
 
 fn sanitize_script_name(name: &str) -> String {
@@ -274,10 +312,105 @@ pub fn update_uv_indices(project_dir: &Path, sources: &[(String, String)]) -> Re
         &["tool", "uv", "index"],
         Item::Value(Value::Array(index_array)),
     );
+
+    // Ensure the tool.uv section is properly formatted
+    if let Some(tool) = doc.get_mut("tool") {
+        if let Some(uv) = tool.get_mut("uv") {
+            if let Some(uv_table) = uv.as_table_mut() {
+                // Make sure the table is created with proper formatting
+                uv_table.set_implicit(true);
+            }
+        }
+    }
+
     write_toml(&pyproject_path, &mut doc)?;
+
+    // Verify the section was written
+    let content = std::fs::read_to_string(&pyproject_path)
+        .map_err(|e| format!("Failed to read updated pyproject.toml: {}", e))?;
+
+    if !content.contains("tool.uv") {
+        // If the section wasn't written properly, try a different approach
+        log::warn!(
+            "UV index section may not have been written correctly. Attempting alternative method."
+        );
+
+        // Read the TOML file again
+        let mut doc = read_and_parse_toml(&pyproject_path)?;
+
+        // Create a table for the UV section
+        let mut uv_table = Table::new();
+        uv_table.set_implicit(true);
+
+        // Create a table for the index section
+        let mut index_array = Array::new();
+        for (name, url) in sources {
+            let mut source_table = toml_edit::InlineTable::new();
+            source_table.insert("name", Value::String(Formatted::new(name.clone())));
+            source_table.insert("url", Value::String(Formatted::new(url.clone())));
+            index_array.push(Value::InlineTable(source_table));
+        }
+
+        // Add the index array to the UV table
+        uv_table.insert("index", Item::Value(Value::Array(index_array)));
+
+        // Make sure there's a tool section
+        if !doc.contains_key("tool") {
+            let mut tool_table = Table::new();
+            tool_table.insert("uv", Item::Table(uv_table));
+            doc.insert("tool", Item::Table(tool_table));
+        } else if let Some(tool) = doc.get_mut("tool").and_then(|t| t.as_table_mut()) {
+            tool.insert("uv", Item::Table(uv_table));
+        }
+
+        // Write the TOML back to the file
+        write_toml(&pyproject_path, &mut doc)?;
+    }
+
+    info!(
+        "Successfully migrated {} package sources to UV indices",
+        sources.len()
+    );
     Ok(())
 }
 
+/// Updates the uv.index section with index URLs from command line
+pub fn update_uv_indices_from_urls(project_dir: &Path, urls: &[String]) -> Result<(), String> {
+    if urls.is_empty() {
+        return Ok(());
+    }
+
+    let pyproject_path = project_dir.join("pyproject.toml");
+    let mut doc = read_and_parse_toml(&pyproject_path)?;
+
+    let index_array: Array = urls
+        .iter()
+        .enumerate()
+        .map(|(i, url)| {
+            let mut index_table = toml_edit::InlineTable::new();
+            // Generate a simple name like "custom1", "custom2" etc.
+            let name = format!("custom{}", i + 1);
+            index_table.insert("name", Value::String(Formatted::new(name)));
+            index_table.insert("url", Value::String(Formatted::new(url.clone())));
+            Value::InlineTable(index_table)
+        })
+        .collect();
+
+    update_section(
+        &mut doc,
+        &["tool", "uv", "index"],
+        Item::Value(Value::Array(index_array)),
+    );
+    write_toml(&pyproject_path, &mut doc)?;
+
+    info!("Added {} custom index URLs to pyproject.toml", urls.len());
+    Ok(())
+}
+
+/// Extracts Poetry source configurations from a pyproject.toml file
+///
+/// This function retrieves all package sources (index URLs) configured in Poetry,
+/// supporting both array-of-tables and array formats.
 pub fn extract_poetry_sources(project_dir: &Path) -> Result<Vec<(String, String)>, String> {
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
     if !old_pyproject_path.exists() {
@@ -285,38 +418,42 @@ pub fn extract_poetry_sources(project_dir: &Path) -> Result<Vec<(String, String)
     }
 
     let doc = read_and_parse_toml(&old_pyproject_path)?;
-
     let mut sources = Vec::new();
-    if let Some(array_of_tables) = doc
-        .get("tool")
-        .and_then(|tool| tool.get("poetry"))
-        .and_then(|poetry| poetry.get("source"))
-        .and_then(|source| source.as_array_of_tables())
-    {
-        for table in array_of_tables {
-            if let (Some(name), Some(url)) = (
-                table.get("name").and_then(|n| n.as_str()),
-                table.get("url").and_then(|u| u.as_str()),
-            ) {
-                sources.push((name.to_string(), url.to_string()));
+
+    // Try to extract sources from the TOML document
+    if let Some(poetry_tool) = doc.get("tool").and_then(|tool| tool.get("poetry")) {
+        // First try to extract as array-of-tables (common format)
+        if let Some(array_of_tables) = poetry_tool
+            .get("source")
+            .and_then(|source| source.as_array_of_tables())
+        {
+            for table in array_of_tables {
+                if let (Some(name), Some(url)) = (
+                    table.get("name").and_then(|n| n.as_str()),
+                    table.get("url").and_then(|u| u.as_str()),
+                ) {
+                    sources.push((name.to_string(), url.to_string()));
+                }
             }
         }
-    }
 
-    if sources.is_empty() {
-        if let Ok(parsed_toml) = toml::from_str::<toml::Value>(&doc.to_string()) {
-            if let Some(source_array) = parsed_toml
-                .get("tool")
-                .and_then(|tool| tool.get("poetry"))
-                .and_then(|poetry| poetry.get("source"))
-                .and_then(|source| source.as_array())
-            {
-                for source in source_array {
-                    if let (Some(name), Some(url)) = (
-                        source.get("name").and_then(|n| n.as_str()),
-                        source.get("url").and_then(|u| u.as_str()),
-                    ) {
-                        sources.push((name.to_string(), url.to_string()));
+        // If no sources were found, try parsing as regular array
+        if sources.is_empty() {
+            // Fall back to parsing as regular TOML Value
+            if let Ok(parsed_toml) = toml::from_str::<toml::Value>(&doc.to_string()) {
+                if let Some(source_array) = parsed_toml
+                    .get("tool")
+                    .and_then(|tool| tool.get("poetry"))
+                    .and_then(|poetry| poetry.get("source"))
+                    .and_then(|source| source.as_array())
+                {
+                    for source in source_array {
+                        if let (Some(name), Some(url)) = (
+                            source.get("name").and_then(|n| n.as_str()),
+                            source.get("url").and_then(|u| u.as_str()),
+                        ) {
+                            sources.push((name.to_string(), url.to_string()));
+                        }
                     }
                 }
             }
@@ -324,6 +461,62 @@ pub fn extract_poetry_sources(project_dir: &Path) -> Result<Vec<(String, String)
     }
 
     Ok(sources)
+}
+
+/// Extracts the project name from pyproject.toml
+pub fn extract_project_name(project_dir: &Path) -> Result<Option<String>, String> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+    if !pyproject_path.exists() {
+        return Ok(None);
+    }
+
+    let doc = read_toml(&pyproject_path)?;
+
+    // Try project section first
+    if let Some(name) = doc
+        .get("project")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+    {
+        return Ok(Some(name.to_string()));
+    }
+
+    // Then try tool.poetry
+    if let Some(name) = doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+    {
+        return Ok(Some(name.to_string()));
+    }
+
+    // Finally try the old pyproject.toml
+    let old_pyproject_path = project_dir.join("old.pyproject.toml");
+    if old_pyproject_path.exists() {
+        let old_doc = read_toml(&old_pyproject_path)?;
+
+        // Try project section in old file
+        if let Some(name) = old_doc
+            .get("project")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+        {
+            return Ok(Some(name.to_string()));
+        }
+
+        // Try tool.poetry in old file
+        if let Some(name) = old_doc
+            .get("tool")
+            .and_then(|t| t.get("poetry"))
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+        {
+            return Ok(Some(name.to_string()));
+        }
+    }
+
+    Ok(None)
 }
 
 #[cfg(test)]

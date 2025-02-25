@@ -1,24 +1,11 @@
+use crate::error::Result;
+use crate::migrators::pipenv::PipenvMigrationSource;
+use crate::migrators::poetry::PoetryMigrationSource;
+use crate::models::project::ProjectType;
 use log::info;
 use std::path::Path;
 
-use crate::migrators::pipenv::PipenvMigrationSource;
-use crate::migrators::poetry::PoetryMigrationSource;
-
-#[derive(Debug, PartialEq)]
-pub enum ProjectType {
-    Poetry(PoetryProjectType),
-    Pipenv,
-    Requirements,
-    SetupPy,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum PoetryProjectType {
-    Package,
-    Application,
-}
-
-pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType, String> {
+pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType> {
     let pyproject_path = project_dir.join("pyproject.toml");
     if pyproject_path.exists() {
         // First, check the project section (Poetry 2.0 style)
@@ -28,7 +15,10 @@ pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType, String> {
                 if let Some(project) = pyproject.get("project") {
                     if project.get("dependencies").is_some() {
                         info!("Detected Poetry 2.0 project");
-                        return Ok(ProjectType::Poetry(PoetryProjectType::Package));
+
+                        // Don't automatically assume it's a package; let PoetryMigrationSource determine that
+                        let poetry_type = PoetryMigrationSource::detect_project_type(project_dir)?;
+                        return Ok(ProjectType::Poetry(poetry_type));
                     }
                 }
             }
@@ -59,7 +49,7 @@ pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType, String> {
         return Ok(ProjectType::Requirements);
     }
 
-    Err("Unable to detect project type. Ensure you have either a pyproject.toml with a [tool.poetry] section or a [project] section, a Pipfile, a setup.py file, or requirements.txt file(s).".to_string())
+    Err(crate::error::Error::ProjectDetection("Unable to detect project type. Ensure you have either a pyproject.toml with a [tool.poetry] section or a [project] section, a Pipfile, a setup.py file, or requirements.txt file(s).".to_string()))
 }
 
 /// Parses the contents of a TOML file to check for Poetry configuration.
@@ -75,17 +65,16 @@ pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType, String> {
 /// # Errors
 ///
 /// Returns an error if the file cannot be read or parsed
-fn has_poetry_section(pyproject_path: &Path) -> Result<bool, String> {
-    let content = std::fs::read_to_string(pyproject_path)
-        .map_err(|e| format!("Error reading file '{}': {}", pyproject_path.display(), e))?;
-
-    let pyproject: toml::Value = toml::from_str(&content).map_err(|e| {
-        format!(
-            "Error parsing TOML in '{}': {}",
-            pyproject_path.display(),
-            e
-        )
+fn has_poetry_section(pyproject_path: &Path) -> Result<bool> {
+    let content = std::fs::read_to_string(pyproject_path).map_err(|e| {
+        crate::error::Error::FileOperation {
+            path: pyproject_path.to_path_buf(),
+            message: format!("Error reading file: {}", e),
+        }
     })?;
+
+    let pyproject: toml::Value =
+        toml::from_str(&content).map_err(crate::error::Error::TomlSerde)?;
 
     // Check for traditional Poetry section
     let has_tool_poetry = pyproject
