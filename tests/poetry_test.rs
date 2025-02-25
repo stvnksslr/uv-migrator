@@ -1,9 +1,10 @@
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
+use uv_migrator::DependencyType;
+use uv_migrator::migrators::MigrationSource;
 use uv_migrator::migrators::poetry::PoetryMigrationSource;
 use uv_migrator::migrators::{self};
-use uv_migrator::migrators::{DependencyType, MigrationSource};
 use uv_migrator::utils::author::extract_authors_from_poetry;
 use uv_migrator::utils::update_pyproject_toml;
 
@@ -243,7 +244,7 @@ fn test_error_missing_file() {
     let result = source.extract_dependencies(&project_dir);
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Error reading file"));
+    assert!(result.unwrap_err().contains("File does not exist"));
 }
 
 /// Test handling of test group dependencies in a Poetry project.

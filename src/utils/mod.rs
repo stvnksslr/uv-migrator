@@ -1,21 +1,21 @@
-pub mod author;
-pub mod file_tracker;
+pub mod file_ops;
 pub mod pip;
 pub mod pyproject;
 pub mod toml;
+pub mod uv;
+
+// Utility modules
+pub mod author;
+pub mod build_system;
+pub mod version;
+
+// Feature-dependent modules
 #[cfg(feature = "self_update")]
 mod update;
-mod uv;
-
-// Export needed items
-pub use file_tracker::FileTrackerGuard;
-pub use pip::parse_pip_conf;
-pub use pyproject::update_pyproject_toml;
-pub use pyproject::update_url;
-pub use uv::check_uv_requirements;
-pub mod build_system;
-
 #[cfg(feature = "self_update")]
 pub use update::update;
 
-pub mod version;
+// Re-export commonly used items
+pub use pip::parse_pip_conf;
+pub use pyproject::update_pyproject_toml;
+pub use pyproject::update_url;

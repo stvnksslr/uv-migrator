@@ -1,4 +1,6 @@
-use crate::migrators::{Dependency, DependencyType, MigrationSource};
+use crate::error::Result;
+use crate::migrators::MigrationSource;
+use crate::models::dependency::{Dependency, DependencyType};
 use log::{debug, info};
 use serde_json::Value;
 use std::{fs, path::Path};
@@ -15,15 +17,18 @@ impl PipenvMigrationSource {
         name: &str,
         value: &Value,
         dep_type: DependencyType,
-    ) -> Result<Option<Dependency>, String> {
+    ) -> Result<Option<Dependency>> {
         // Ignore python version constraints
         if name == "python_version" || name == "python_full_version" {
             return Ok(None);
         }
 
-        let dep_obj = value
-            .as_object()
-            .ok_or_else(|| format!("Invalid dependency format for '{}': expected object", name))?;
+        let dep_obj = value.as_object().ok_or_else(|| {
+            crate::error::Error::DependencyParsing(format!(
+                "Invalid dependency format for '{}': expected object",
+                name
+            ))
+        })?;
 
         // Handle git dependencies
         if dep_obj.contains_key("git") {
@@ -34,7 +39,10 @@ impl PipenvMigrationSource {
         let version = match dep_obj.get("version") {
             Some(version_value) => {
                 let version_str = version_value.as_str().ok_or_else(|| {
-                    format!("Invalid version format for '{}': expected string", name)
+                    crate::error::Error::DependencyParsing(format!(
+                        "Invalid version format for '{}': expected string",
+                        name
+                    ))
                 })?;
                 Some(self.clean_version(version_str))
             }
@@ -57,11 +65,10 @@ impl PipenvMigrationSource {
         name: &str,
         dep_obj: &serde_json::Map<String, Value>,
         dep_type: DependencyType,
-    ) -> Result<Option<Dependency>, String> {
-        let git_url = dep_obj
-            .get("git")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| format!("Invalid git URL for '{}'", name))?;
+    ) -> Result<Option<Dependency>> {
+        let git_url = dep_obj.get("git").and_then(|v| v.as_str()).ok_or_else(|| {
+            crate::error::Error::DependencyParsing(format!("Invalid git URL for '{}'", name))
+        })?;
 
         let ref_value = dep_obj.get("ref").and_then(|v| v.as_str());
 
@@ -82,10 +89,7 @@ impl PipenvMigrationSource {
         }))
     }
 
-    fn extract_markers(
-        &self,
-        dep_obj: &serde_json::Map<String, Value>,
-    ) -> Result<Option<String>, String> {
+    fn extract_markers(&self, dep_obj: &serde_json::Map<String, Value>) -> Result<Option<String>> {
         let markers = match (
             dep_obj.get("markers"),
             dep_obj.get("platform_python_implementation"),
@@ -95,26 +99,36 @@ impl PipenvMigrationSource {
             (Some(markers), _, _, _) => Some(
                 markers
                     .as_str()
-                    .ok_or_else(|| "Invalid markers format: expected string".to_string())?
+                    .ok_or_else(|| {
+                        crate::error::Error::DependencyParsing(
+                            "Invalid markers format: expected string".to_string(),
+                        )
+                    })?
                     .to_string(),
             ),
             (_, Some(impl_value), _, _) => Some(format!(
                 "platform_python_implementation == '{}'",
                 impl_value
                     .as_str()
-                    .ok_or_else(|| "Invalid platform_python_implementation format".to_string())?
+                    .ok_or_else(|| crate::error::Error::DependencyParsing(
+                        "Invalid platform_python_implementation format".to_string()
+                    ))?
             )),
             (_, _, Some(platform), _) => Some(format!(
                 "platform == '{}'",
                 platform
                     .as_str()
-                    .ok_or_else(|| "Invalid platform format".to_string())?
+                    .ok_or_else(|| crate::error::Error::DependencyParsing(
+                        "Invalid platform format".to_string()
+                    ))?
             )),
             (_, _, _, Some(sys_platform)) => Some(format!(
                 "sys_platform == '{}'",
                 sys_platform
                     .as_str()
-                    .ok_or_else(|| "Invalid sys_platform format".to_string())?
+                    .ok_or_else(|| crate::error::Error::DependencyParsing(
+                        "Invalid sys_platform format".to_string()
+                    ))?
             )),
             _ => None,
         };
@@ -136,27 +150,27 @@ impl PipenvMigrationSource {
 }
 
 impl MigrationSource for PipenvMigrationSource {
-    fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>, String> {
+    fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>> {
         info!("Extracting dependencies from Pipfile.lock");
         let pipfile_lock_path = project_dir.join("Pipfile.lock");
 
         if !pipfile_lock_path.exists() {
-            return Err(format!(
-                "Error reading file '{}'",
-                pipfile_lock_path.display()
-            ));
+            return Err(crate::error::Error::FileOperation {
+                path: pipfile_lock_path.clone(),
+                message: "Pipfile.lock does not exist".to_string(),
+            });
         }
 
         let content = fs::read_to_string(&pipfile_lock_path).map_err(|e| {
-            format!(
-                "Error reading file '{}': {}",
-                pipfile_lock_path.display(),
-                e
-            )
+            crate::error::Error::FileOperation {
+                path: pipfile_lock_path.clone(),
+                message: format!("Error reading file: {}", e),
+            }
         })?;
 
-        let lock_data: Value = serde_json::from_str(&content)
-            .map_err(|e| format!("Error parsing Pipfile.lock: {}", e))?;
+        let lock_data: Value = serde_json::from_str(&content).map_err(|e| {
+            crate::error::Error::DependencyParsing(format!("Error parsing Pipfile.lock: {}", e))
+        })?;
 
         let mut dependencies = Vec::new();
 

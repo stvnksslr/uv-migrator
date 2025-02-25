@@ -1,5 +1,6 @@
-use super::requirements::RequirementsMigrationSource;
-use super::{Dependency, DependencyType, MigrationSource};
+use crate::error::Result;
+use crate::migrators::{MigrationSource, requirements::RequirementsMigrationSource};
+use crate::models::dependency::{Dependency, DependencyType};
 use log::{debug, info};
 use std::fs;
 use std::path::Path;
@@ -7,7 +8,7 @@ use std::path::Path;
 pub struct SetupPyMigrationSource;
 
 impl MigrationSource for SetupPyMigrationSource {
-    fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>, String> {
+    fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>> {
         info!("Extracting dependencies from setup.py");
         let requirements_source = RequirementsMigrationSource;
         if requirements_source.has_requirements_files(project_dir) {
@@ -21,10 +22,13 @@ impl MigrationSource for SetupPyMigrationSource {
 }
 
 impl SetupPyMigrationSource {
-    fn parse_setup_py(&self, project_dir: &Path) -> Result<Vec<Dependency>, String> {
+    fn parse_setup_py(&self, project_dir: &Path) -> Result<Vec<Dependency>> {
         let setup_py_path = project_dir.join("setup.py");
-        let content = fs::read_to_string(&setup_py_path)
-            .map_err(|e| format!("Failed to read setup.py: {}", e))?;
+        let content =
+            fs::read_to_string(&setup_py_path).map_err(|e| crate::error::Error::FileOperation {
+                path: setup_py_path.clone(),
+                message: format!("Failed to read setup.py: {}", e),
+            })?;
 
         debug!("Parsing setup.py content");
         let mut dependencies = Vec::new();
@@ -133,7 +137,7 @@ impl SetupPyMigrationSource {
         }
     }
 
-    pub fn extract_description(project_dir: &Path) -> Result<Option<String>, String> {
+    pub fn extract_description(project_dir: &Path) -> Result<Option<String>> {
         let setup_py_path = project_dir.join("setup.py");
         if !setup_py_path.exists() {
             return Ok(None);
@@ -162,7 +166,7 @@ impl SetupPyMigrationSource {
         Ok(None)
     }
 
-    pub fn extract_setup_content(content: &str) -> Result<String, String> {
+    pub fn extract_setup_content(content: &str) -> Result<String> {
         let lines = content.lines().enumerate().peekable();
         let mut setup_content = String::new();
         let mut in_setup = false;
@@ -206,10 +210,14 @@ impl SetupPyMigrationSource {
         }
 
         if !in_setup {
-            return Err("Could not find setup() call".to_string());
+            return Err(crate::error::Error::DependencyParsing(
+                "Could not find setup() call".to_string(),
+            ));
         }
         if paren_count > 0 {
-            return Err("Could not find matching closing parenthesis for setup()".to_string());
+            return Err(crate::error::Error::DependencyParsing(
+                "Could not find matching closing parenthesis for setup()".to_string(),
+            ));
         }
 
         Ok(setup_content)
@@ -264,14 +272,17 @@ impl SetupPyMigrationSource {
         Some(value)
     }
 
-    pub fn extract_url(project_dir: &Path) -> Result<Option<String>, String> {
+    pub fn extract_url(project_dir: &Path) -> Result<Option<String>> {
         let setup_py_path = project_dir.join("setup.py");
         if !setup_py_path.exists() {
             return Ok(None);
         }
 
-        let content = fs::read_to_string(&setup_py_path)
-            .map_err(|e| format!("Failed to read setup.py: {}", e))?;
+        let content =
+            fs::read_to_string(&setup_py_path).map_err(|e| crate::error::Error::FileOperation {
+                path: setup_py_path.clone(),
+                message: format!("Failed to read setup.py: {}", e),
+            })?;
 
         if let Some(start_idx) = content.find("setup(") {
             let bracket_content = Self::extract_setup_content(&content[start_idx..])?;

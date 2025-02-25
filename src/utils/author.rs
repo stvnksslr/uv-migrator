@@ -1,3 +1,4 @@
+use crate::error::{Error, Result};
 use crate::migrators::setup_py::SetupPyMigrationSource;
 use std::path::Path;
 use toml_edit::DocumentMut;
@@ -8,14 +9,16 @@ pub struct Author {
     pub email: Option<String>,
 }
 
-pub fn extract_authors_from_setup_py(project_dir: &Path) -> Result<Vec<Author>, String> {
+pub fn extract_authors_from_setup_py(project_dir: &Path) -> Result<Vec<Author>> {
     let setup_py_path = project_dir.join("setup.py");
     if !setup_py_path.exists() {
         return Ok(vec![]);
     }
 
-    let content = std::fs::read_to_string(&setup_py_path)
-        .map_err(|e| format!("Failed to read setup.py: {}", e))?;
+    let content = std::fs::read_to_string(&setup_py_path).map_err(|e| Error::FileOperation {
+        path: setup_py_path.clone(),
+        message: format!("Failed to read setup.py: {}", e),
+    })?;
 
     let mut authors = Vec::new();
 
@@ -32,18 +35,19 @@ pub fn extract_authors_from_setup_py(project_dir: &Path) -> Result<Vec<Author>, 
     Ok(authors)
 }
 
-pub fn extract_authors_from_poetry(project_dir: &Path) -> Result<Vec<Author>, String> {
+pub fn extract_authors_from_poetry(project_dir: &Path) -> Result<Vec<Author>> {
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
     if !old_pyproject_path.exists() {
         return Ok(vec![]);
     }
 
-    let content = std::fs::read_to_string(&old_pyproject_path)
-        .map_err(|e| format!("Failed to read old.pyproject.toml: {}", e))?;
+    let content =
+        std::fs::read_to_string(&old_pyproject_path).map_err(|e| Error::FileOperation {
+            path: old_pyproject_path.clone(),
+            message: format!("Failed to read old.pyproject.toml: {}", e),
+        })?;
 
-    let doc = content
-        .parse::<DocumentMut>()
-        .map_err(|e| format!("Failed to parse TOML: {}", e))?;
+    let doc = content.parse::<DocumentMut>().map_err(Error::Toml)?;
 
     // Extract authors from project section (Poetry 2.0 style)
     if let Some(project) = doc.get("project") {

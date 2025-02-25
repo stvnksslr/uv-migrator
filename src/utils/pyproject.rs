@@ -3,12 +3,12 @@ use log::{debug, info};
 use std::path::Path;
 use toml_edit::{Array, DocumentMut, Formatted, Item, Table, Value};
 
+/// Reads a TOML file and returns its content as a DocumentMut.
+///
+/// This function delegates to the utility function in toml.rs to avoid
+/// code duplication and ensure consistent error handling.
 fn read_and_parse_toml(path: &Path) -> Result<DocumentMut, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-    content
-        .parse::<DocumentMut>()
-        .map_err(|e| format!("Failed to parse TOML: {}", e))
+    read_toml(path)
 }
 
 pub fn update_pyproject_toml(project_dir: &Path, _extra_urls: &[String]) -> Result<(), String> {
@@ -278,6 +278,43 @@ pub fn update_uv_indices(project_dir: &Path, sources: &[(String, String)]) -> Re
     Ok(())
 }
 
+/// Updates the uv.index section with index URLs from command line
+pub fn update_uv_indices_from_urls(project_dir: &Path, urls: &[String]) -> Result<(), String> {
+    if urls.is_empty() {
+        return Ok(());
+    }
+
+    let pyproject_path = project_dir.join("pyproject.toml");
+    let mut doc = read_and_parse_toml(&pyproject_path)?;
+
+    let index_array: Array = urls
+        .iter()
+        .enumerate()
+        .map(|(i, url)| {
+            let mut index_table = toml_edit::InlineTable::new();
+            // Generate a simple name like "custom1", "custom2" etc.
+            let name = format!("custom{}", i + 1);
+            index_table.insert("name", Value::String(Formatted::new(name)));
+            index_table.insert("url", Value::String(Formatted::new(url.clone())));
+            Value::InlineTable(index_table)
+        })
+        .collect();
+
+    update_section(
+        &mut doc,
+        &["tool", "uv", "index"],
+        Item::Value(Value::Array(index_array)),
+    );
+    write_toml(&pyproject_path, &mut doc)?;
+
+    info!("Added {} custom index URLs to pyproject.toml", urls.len());
+    Ok(())
+}
+
+/// Extracts Poetry source configurations from a pyproject.toml file
+///
+/// This function retrieves all package sources (index URLs) configured in Poetry,
+/// supporting both array-of-tables and array formats.
 pub fn extract_poetry_sources(project_dir: &Path) -> Result<Vec<(String, String)>, String> {
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
     if !old_pyproject_path.exists() {
@@ -285,38 +322,42 @@ pub fn extract_poetry_sources(project_dir: &Path) -> Result<Vec<(String, String)
     }
 
     let doc = read_and_parse_toml(&old_pyproject_path)?;
-
     let mut sources = Vec::new();
-    if let Some(array_of_tables) = doc
-        .get("tool")
-        .and_then(|tool| tool.get("poetry"))
-        .and_then(|poetry| poetry.get("source"))
-        .and_then(|source| source.as_array_of_tables())
-    {
-        for table in array_of_tables {
-            if let (Some(name), Some(url)) = (
-                table.get("name").and_then(|n| n.as_str()),
-                table.get("url").and_then(|u| u.as_str()),
-            ) {
-                sources.push((name.to_string(), url.to_string()));
+
+    // Try to extract sources from the TOML document
+    if let Some(poetry_tool) = doc.get("tool").and_then(|tool| tool.get("poetry")) {
+        // First try to extract as array-of-tables (common format)
+        if let Some(array_of_tables) = poetry_tool
+            .get("source")
+            .and_then(|source| source.as_array_of_tables())
+        {
+            for table in array_of_tables {
+                if let (Some(name), Some(url)) = (
+                    table.get("name").and_then(|n| n.as_str()),
+                    table.get("url").and_then(|u| u.as_str()),
+                ) {
+                    sources.push((name.to_string(), url.to_string()));
+                }
             }
         }
-    }
 
-    if sources.is_empty() {
-        if let Ok(parsed_toml) = toml::from_str::<toml::Value>(&doc.to_string()) {
-            if let Some(source_array) = parsed_toml
-                .get("tool")
-                .and_then(|tool| tool.get("poetry"))
-                .and_then(|poetry| poetry.get("source"))
-                .and_then(|source| source.as_array())
-            {
-                for source in source_array {
-                    if let (Some(name), Some(url)) = (
-                        source.get("name").and_then(|n| n.as_str()),
-                        source.get("url").and_then(|u| u.as_str()),
-                    ) {
-                        sources.push((name.to_string(), url.to_string()));
+        // If no sources were found, try parsing as regular array
+        if sources.is_empty() {
+            // Fall back to parsing as regular TOML Value
+            if let Ok(parsed_toml) = toml::from_str::<toml::Value>(&doc.to_string()) {
+                if let Some(source_array) = parsed_toml
+                    .get("tool")
+                    .and_then(|tool| tool.get("poetry"))
+                    .and_then(|poetry| poetry.get("source"))
+                    .and_then(|source| source.as_array())
+                {
+                    for source in source_array {
+                        if let (Some(name), Some(url)) = (
+                            source.get("name").and_then(|n| n.as_str()),
+                            source.get("url").and_then(|u| u.as_str()),
+                        ) {
+                            sources.push((name.to_string(), url.to_string()));
+                        }
                     }
                 }
             }

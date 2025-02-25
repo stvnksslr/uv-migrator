@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
-use uv_migrator::utils::FileTrackerGuard;
+use uv_migrator::utils::file_ops::FileTrackerGuard;
 
 #[cfg(test)]
 mod tests {
@@ -77,7 +77,7 @@ mod tests {
 
         let result = guard.track_rename(&nonexistent, &new_path);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("does not exist"));
+        assert!(result.unwrap_err().contains("Source file doesn't exist"));
     }
 
     /// Tests automatic rollback functionality of FileTrackerGuard.

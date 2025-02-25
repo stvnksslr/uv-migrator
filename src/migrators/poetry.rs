@@ -1,5 +1,7 @@
-use super::{Dependency, DependencyType, MigrationSource};
-use crate::migrators::detect::PoetryProjectType;
+use crate::error::Result;
+use crate::migrators::MigrationSource;
+use crate::models::dependency::{Dependency, DependencyType};
+use crate::models::project::PoetryProjectType;
 use crate::utils::toml::read_toml;
 use log::{debug, info};
 use std::fs;
@@ -9,7 +11,7 @@ use toml_edit::{DocumentMut, Item, Value};
 pub struct PoetryMigrationSource;
 
 impl PoetryMigrationSource {
-    pub fn detect_project_type(project_dir: &Path) -> Result<PoetryProjectType, String> {
+    pub fn detect_project_type(project_dir: &Path) -> Result<PoetryProjectType> {
         let pyproject_path = project_dir.join("pyproject.toml");
         let doc = read_toml(&pyproject_path)?;
 
@@ -52,7 +54,7 @@ impl PoetryMigrationSource {
         Ok(PoetryProjectType::Application)
     }
 
-    pub fn extract_python_version(project_dir: &Path) -> Result<Option<String>, String> {
+    pub fn extract_python_version(project_dir: &Path) -> Result<Option<String>> {
         let old_pyproject_path = project_dir.join("old.pyproject.toml");
         if !old_pyproject_path.exists() {
             return Ok(None);
@@ -198,12 +200,15 @@ impl PoetryMigrationSource {
 }
 
 impl MigrationSource for PoetryMigrationSource {
-    fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>, String> {
+    fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>> {
         info!("Extracting dependencies from Poetry project");
         let pyproject_path = project_dir.join("pyproject.toml");
 
         if !pyproject_path.exists() {
-            return Err(format!("Error reading file '{}'", pyproject_path.display()));
+            return Err(crate::error::Error::FileOperation {
+                path: pyproject_path.clone(),
+                message: format!("File does not exist: {}", pyproject_path.display()),
+            });
         }
 
         let content = fs::read_to_string(&pyproject_path)

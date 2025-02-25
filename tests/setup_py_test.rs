@@ -2,8 +2,9 @@
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
+use uv_migrator::DependencyType;
+use uv_migrator::migrators::MigrationSource;
 use uv_migrator::migrators::setup_py::SetupPyMigrationSource;
-use uv_migrator::migrators::{DependencyType, MigrationSource};
 use uv_migrator::utils::author::extract_authors_from_setup_py;
 use uv_migrator::utils::toml::{read_toml, update_section, write_toml};
 

@@ -1,5 +1,6 @@
-use super::dependency::DependencyType;
-use super::{Dependency, MigrationSource};
+use crate::error::Result;
+use crate::migrators::MigrationSource;
+use crate::models::dependency::{Dependency, DependencyType};
 use log::{debug, info};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,10 +8,12 @@ use std::path::{Path, PathBuf};
 pub struct RequirementsMigrationSource;
 
 impl MigrationSource for RequirementsMigrationSource {
-    fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>, String> {
+    fn extract_dependencies(&self, project_dir: &Path) -> Result<Vec<Dependency>> {
         let requirements_files = self.find_requirements_files(project_dir);
         if requirements_files.is_empty() {
-            return Err("No requirements files found.".to_string());
+            return Err(crate::error::Error::ProjectDetection(
+                "No requirements files found.".to_string(),
+            ));
         }
 
         let mut dependencies = Vec::new();
@@ -30,7 +33,7 @@ impl RequirementsMigrationSource {
     pub(crate) fn find_requirements_files(&self, dir: &Path) -> Vec<(PathBuf, DependencyType)> {
         let mut requirements_files = Vec::new();
         if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.filter_map(Result::ok) {
+            for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_file() {
                     if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
@@ -67,9 +70,12 @@ impl RequirementsMigrationSource {
         &self,
         file_path: &Path,
         dep_type: DependencyType,
-    ) -> Result<Vec<Dependency>, String> {
-        let contents = fs::read_to_string(file_path)
-            .map_err(|e| format!("Error reading file '{}': {}", file_path.display(), e))?;
+    ) -> Result<Vec<Dependency>> {
+        let contents =
+            fs::read_to_string(file_path).map_err(|e| crate::error::Error::FileOperation {
+                path: file_path.to_path_buf(),
+                message: format!("Error reading file: {}", e),
+            })?;
 
         let mut dependencies = Vec::new();
 
@@ -134,12 +140,14 @@ impl RequirementsMigrationSource {
         }
     }
 
-    fn parse_requirement(&self, line: &str) -> Result<Option<Dependency>, String> {
+    fn parse_requirement(&self, line: &str) -> Result<Option<Dependency>> {
         // Handle editable installs (-e flag)
         let line = if line.starts_with("-e") {
             let parts: Vec<&str> = line.splitn(2, ' ').collect();
             if parts.len() != 2 {
-                return Err("Invalid editable install format".to_string());
+                return Err(crate::error::Error::DependencyParsing(
+                    "Invalid editable install format".to_string(),
+                ));
             }
             parts[1]
         } else {
@@ -152,7 +160,9 @@ impl RequirementsMigrationSource {
 
         // Handle malformed lines
         if package_spec.is_empty() || package_spec.contains("===") {
-            return Err("Malformed requirement line".to_string());
+            return Err(crate::error::Error::DependencyParsing(
+                "Malformed requirement line".to_string(),
+            ));
         }
 
         // Handle URLs and git repositories
@@ -182,10 +192,7 @@ impl RequirementsMigrationSource {
         }))
     }
 
-    fn parse_url_requirement(
-        &self,
-        package_spec: &str,
-    ) -> Result<(String, Option<String>), String> {
+    fn parse_url_requirement(&self, package_spec: &str) -> Result<(String, Option<String>)> {
         let name = if let Some(egg_part) = package_spec.split('#').last() {
             if egg_part.starts_with("egg=") {
                 egg_part.trim_start_matches("egg=").to_string()
@@ -194,27 +201,30 @@ impl RequirementsMigrationSource {
                     .split('/')
                     .last()
                     .and_then(|f| f.split('-').next())
-                    .ok_or("Invalid wheel filename")?
+                    .ok_or_else(|| {
+                        crate::error::Error::DependencyParsing("Invalid wheel filename".to_string())
+                    })?
                     .to_string()
             } else {
-                return Err("Invalid URL format".to_string());
+                return Err(crate::error::Error::DependencyParsing(
+                    "Invalid URL format".to_string(),
+                ));
             }
         } else {
             package_spec
                 .split('/')
                 .last()
                 .and_then(|f| f.split('.').next())
-                .ok_or("Invalid URL format")?
+                .ok_or_else(|| {
+                    crate::error::Error::DependencyParsing("Invalid URL format".to_string())
+                })?
                 .to_string()
         };
 
         Ok((name, None))
     }
 
-    fn parse_regular_requirement(
-        &self,
-        package_spec: &str,
-    ) -> Result<(String, Option<String>), String> {
+    fn parse_regular_requirement(&self, package_spec: &str) -> Result<(String, Option<String>)> {
         // Return early if no version specifier is present
         if !package_spec.contains(&['>', '<', '=', '~', '!'][..]) {
             return Ok((package_spec.to_string(), None));
