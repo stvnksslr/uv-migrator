@@ -30,6 +30,24 @@ pub enum DependencyType {
     Group(String),
 }
 
+#[derive(Debug, Clone)]
+pub struct GitDependency {
+    /// The name of the dependency package
+    pub name: String,
+
+    /// Git repository URL
+    pub git_url: String,
+
+    /// Optional branch reference
+    pub branch: Option<String>,
+
+    /// Optional tag reference
+    pub tag: Option<String>,
+
+    /// Optional revision reference
+    pub rev: Option<String>,
+}
+
 use std::str::FromStr;
 
 impl FromStr for DependencyType {
