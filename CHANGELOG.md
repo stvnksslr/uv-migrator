@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.7.1](https://github.com/stvnksslr/uv-migrator/compare/v2025.7.0...v2025.7.1) - 2025-02-27
+
+### Other
+- *(#70)* not parsing git urls or packages correctly (by @stvnksslr)
+- *(pipenv)* pipenv was pulling dependencies from the lock file in excess of the top level dependencies in the Pipfile this has been correctd (by @stvnksslr)
+- *(goreleaser)* removing deprecated config (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
 ## [2025.6.3](https://github.com/stvnksslr/uv-migrator/compare/v2025.6.2...v2025.6.3) - 2025-02-23
 
 ### Fixed
