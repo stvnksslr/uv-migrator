@@ -306,7 +306,6 @@ pub fn perform_poetry_migration(
         }
     }
 
-    // Add this new section for git dependencies migration
     info!("Checking for Poetry git dependencies to migrate");
     let poetry_source = poetry::PoetryMigrationSource;
     match poetry_source.extract_git_dependencies(project_dir) {
@@ -320,7 +319,6 @@ pub fn perform_poetry_migration(
             }
         }
         Err(e) => {
-            // Log warning but continue with migration
             log::warn!("Failed to extract git dependencies: {}", e);
         }
     }
