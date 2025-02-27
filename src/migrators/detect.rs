@@ -24,7 +24,6 @@ pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType> {
             }
         }
 
-        // Then check for traditional Poetry section
         if has_poetry_section(&pyproject_path)? {
             info!("Detected Poetry project");
             let poetry_type = PoetryMigrationSource::detect_project_type(project_dir)?;
