@@ -1,3 +1,4 @@
+use crate::models::GitDependency;
 use crate::utils::toml::{read_toml, update_section, write_toml};
 use log::{debug, info};
 use std::path::Path;
@@ -517,6 +518,69 @@ pub fn extract_project_name(project_dir: &Path) -> Result<Option<String>, String
     }
 
     Ok(None)
+}
+
+/// Updates the pyproject.toml with git dependencies from Poetry
+pub fn update_git_dependencies(
+    project_dir: &Path,
+    git_dependencies: &[GitDependency],
+) -> Result<(), String> {
+    if git_dependencies.is_empty() {
+        return Ok(());
+    }
+
+    let pyproject_path = project_dir.join("pyproject.toml");
+    let mut doc = read_toml(&pyproject_path)?;
+
+    for git_dep in git_dependencies {
+        let mut source_table = Table::new();
+        source_table.set_implicit(true);
+
+        // Add git URL
+        source_table.insert(
+            "git",
+            Item::Value(Value::String(Formatted::new(git_dep.git_url.clone()))),
+        );
+
+        // Add branch if present
+        if let Some(branch) = &git_dep.branch {
+            source_table.insert(
+                "branch",
+                Item::Value(Value::String(Formatted::new(branch.clone()))),
+            );
+        }
+
+        // Add tag if present
+        if let Some(tag) = &git_dep.tag {
+            source_table.insert(
+                "tag",
+                Item::Value(Value::String(Formatted::new(tag.clone()))),
+            );
+        }
+
+        // Add rev if present
+        if let Some(rev) = &git_dep.rev {
+            source_table.insert(
+                "rev",
+                Item::Value(Value::String(Formatted::new(rev.clone()))),
+            );
+        }
+
+        // Add to [tool.uv.sources] section
+        update_section(
+            &mut doc,
+            &["tool", "uv", "sources", &git_dep.name],
+            Item::Table(source_table),
+        );
+    }
+
+    write_toml(&pyproject_path, &mut doc)?;
+
+    info!(
+        "Successfully added {} git dependencies to [tool.uv.sources]",
+        git_dependencies.len()
+    );
+    Ok(())
 }
 
 #[cfg(test)]

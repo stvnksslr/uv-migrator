@@ -1,3 +1,4 @@
+use crate::error::Error;
 use crate::error::Result;
 use crate::migrators::poetry;
 use crate::models::project::PoetryProjectType;
@@ -302,6 +303,25 @@ pub fn perform_poetry_migration(
                     info!("Migrated Poetry packages configuration to Hatchling");
                 }
             }
+        }
+    }
+
+    // Add this new section for git dependencies migration
+    info!("Checking for Poetry git dependencies to migrate");
+    let poetry_source = poetry::PoetryMigrationSource;
+    match poetry_source.extract_git_dependencies(project_dir) {
+        Ok(git_dependencies) => {
+            if !git_dependencies.is_empty() {
+                info!("Migrating {} git dependencies", git_dependencies.len());
+                file_tracker.track_file(&pyproject_path)?;
+                pyproject::update_git_dependencies(project_dir, &git_dependencies).map_err(
+                    |e| Error::General(format!("Failed to migrate git dependencies: {}", e)),
+                )?;
+            }
+        }
+        Err(e) => {
+            // Log warning but continue with migration
+            log::warn!("Failed to extract git dependencies: {}", e);
         }
     }
 

@@ -1,5 +1,7 @@
+use crate::error::Error;
 use crate::error::Result;
 use crate::migrators::MigrationSource;
+use crate::models::GitDependency;
 use crate::models::dependency::{Dependency, DependencyType};
 use crate::models::project::PoetryProjectType;
 use crate::utils::toml::read_toml;
@@ -254,6 +256,141 @@ impl PoetryMigrationSource {
         };
 
         (name, version, extras)
+    }
+
+    /// Extracts git dependencies from Poetry project
+    pub fn extract_git_dependencies(&self, project_dir: &Path) -> Result<Vec<GitDependency>> {
+        let old_pyproject_path = project_dir.join("old.pyproject.toml");
+        if !old_pyproject_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let content =
+            fs::read_to_string(&old_pyproject_path).map_err(|e| Error::FileOperation {
+                path: old_pyproject_path.clone(),
+                message: format!("Failed to read old.pyproject.toml: {}", e),
+            })?;
+
+        let doc = content.parse::<DocumentMut>().map_err(Error::Toml)?;
+        let mut git_dependencies = Vec::new();
+
+        // Check tool.poetry.dependencies section (Poetry 1.0 style)
+        if let Some(tool) = doc.get("tool") {
+            if let Some(poetry) = tool.get("poetry") {
+                if let Some(deps) = poetry.get("dependencies").and_then(|d| d.as_table()) {
+                    for (name, value) in deps.iter() {
+                        if let Some(git_dep) = self.extract_git_dependency_info(name, value) {
+                            git_dependencies.push(git_dep);
+                        }
+                    }
+                }
+
+                // Also check group dependencies
+                if let Some(groups) = poetry.get("group").and_then(|g| g.as_table()) {
+                    for (_, group) in groups.iter() {
+                        if let Some(deps) = group
+                            .as_table()
+                            .and_then(|g| g.get("dependencies"))
+                            .and_then(|d| d.as_table())
+                        {
+                            for (name, value) in deps.iter() {
+                                if let Some(git_dep) = self.extract_git_dependency_info(name, value)
+                                {
+                                    git_dependencies.push(git_dep);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check Poetry 2.0 style dependencies
+        if let Some(project) = doc.get("project") {
+            if let Some(_deps) = project.get("dependencies").and_then(|d| d.as_array()) {
+                // For now, Poetry 2.0 git dependencies aren't handled
+                // Would need additional parsing for the newer format
+            }
+        }
+
+        Ok(git_dependencies)
+    }
+
+    /// Extracts git dependency information from a Poetry dependency definition
+    fn extract_git_dependency_info(&self, name: &str, value: &Item) -> Option<GitDependency> {
+        if name == "python" {
+            return None;
+        }
+
+        match value {
+            Item::Value(Value::InlineTable(table)) => {
+                if let Some(git_url) = table.get("git").and_then(|v| v.as_str()) {
+                    let mut git_dep = GitDependency {
+                        name: name.to_string(),
+                        git_url: git_url.to_string(),
+                        branch: None,
+                        tag: None,
+                        rev: None,
+                    };
+
+                    // Extract branch, tag, or rev
+                    if let Some(branch) = table.get("branch").and_then(|v| v.as_str()) {
+                        git_dep.branch = Some(branch.to_string());
+                    }
+
+                    if let Some(tag) = table.get("tag").and_then(|v| v.as_str()) {
+                        git_dep.tag = Some(tag.to_string());
+                    }
+
+                    if let Some(rev) = table.get("rev").and_then(|v| v.as_str()) {
+                        git_dep.rev = Some(rev.to_string());
+                    }
+
+                    return Some(git_dep);
+                }
+            }
+            Item::Table(table) => {
+                if let Some(git_url) = table.get("git").and_then(|v| match v {
+                    Item::Value(Value::String(s)) => Some(s.value()),
+                    _ => None,
+                }) {
+                    let mut git_dep = GitDependency {
+                        name: name.to_string(),
+                        git_url: git_url.to_string(),
+                        branch: None,
+                        tag: None,
+                        rev: None,
+                    };
+
+                    // Extract branch, tag, or rev
+                    if let Some(branch) = table.get("branch").and_then(|v| match v {
+                        Item::Value(Value::String(s)) => Some(s.value()),
+                        _ => None,
+                    }) {
+                        git_dep.branch = Some(branch.to_string());
+                    }
+
+                    if let Some(tag) = table.get("tag").and_then(|v| match v {
+                        Item::Value(Value::String(s)) => Some(s.value()),
+                        _ => None,
+                    }) {
+                        git_dep.tag = Some(tag.to_string());
+                    }
+
+                    if let Some(rev) = table.get("rev").and_then(|v| match v {
+                        Item::Value(Value::String(s)) => Some(s.value()),
+                        _ => None,
+                    }) {
+                        git_dep.rev = Some(rev.to_string());
+                    }
+
+                    return Some(git_dep);
+                }
+            }
+            _ => {}
+        }
+
+        None
     }
 
     fn format_dependency(
