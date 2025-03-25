@@ -15,7 +15,7 @@ applications that consume packages, stay tuned for support for migrating package
 easy install script, source located at [install.sh](https://github.com/stvnksslr/uv-migrator/blob/main/install.sh)
 
 ```sh
-curl https://uv-migrator.stvnksslr.com/install.sh | bash
+curl https://files.stvnksslr.com/uv-migrator/install.sh | bash
 ```
 
 Install via Cargo
