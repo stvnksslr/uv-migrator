@@ -374,6 +374,14 @@ pub fn run_migration(
         migration_tool.prepare_project(project_dir, &mut file_tracker, &adjusted_project_type)?;
         info!("Project initialized with UV");
 
+        // Perform common migrations
+        perform_common_migrations(
+            project_dir,
+            &mut file_tracker,
+            import_global_pip_conf,
+            additional_index_urls,
+        )?;
+
         // Add dependencies
         migration_tool.add_dependencies(project_dir, &dependencies)?;
         info!("Dependencies added successfully");
@@ -407,14 +415,6 @@ pub fn run_migration(
                 }
             }
         }
-
-        // Perform common migrations
-        perform_common_migrations(
-            project_dir,
-            &mut file_tracker,
-            import_global_pip_conf,
-            additional_index_urls,
-        )?;
 
         // Cleanup
         if hello_py_path.exists() {
