@@ -17,4 +17,3 @@ pub use update::{check_for_updates, update};
 
 // Re-export commonly used items
 pub use pip::parse_pip_conf;
-pub use pyproject::{update_pyproject_toml, update_url};

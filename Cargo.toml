@@ -26,6 +26,8 @@ which = "7.0.1"
 semver = "1.0.25"
 toml_edit = "0.22.22"
 serde_json = "1.0.137"
+serde_yml = "0.0.12"
+regex = "1.11.1"
 
 [dev-dependencies]
 tempfile = "3.14.0"

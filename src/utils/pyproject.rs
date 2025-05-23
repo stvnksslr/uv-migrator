@@ -1,54 +1,203 @@
+use crate::error::{Error, Result};
 use crate::models::GitDependency;
 use crate::utils::toml::{read_toml, update_section, write_toml};
 use log::{debug, info};
+use std::fs;
 use std::path::Path;
-use toml_edit::{Array, DocumentMut, Formatted, Item, Table, Value};
+use toml_edit::{Array, DocumentMut, Formatted, InlineTable, Item, Table, Value};
 
-/// Reads a TOML file and returns its content as a DocumentMut.
-///
-/// This function delegates to the utility function in toml.rs to avoid
-/// code duplication and ensure consistent error handling.
-fn read_and_parse_toml(path: &Path) -> Result<DocumentMut, String> {
-    read_toml(path)
-}
-
-pub fn update_pyproject_toml(project_dir: &Path, _extra_urls: &[String]) -> Result<(), String> {
+/// Updates the pyproject.toml with basic project metadata
+pub fn update_pyproject_toml(project_dir: &Path, _extra_args: &[String]) -> Result<()> {
     let pyproject_path = project_dir.join("pyproject.toml");
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
 
     if !old_pyproject_path.exists() {
+        debug!("No old.pyproject.toml found, skipping update");
         return Ok(());
     }
 
-    let old_doc = read_and_parse_toml(&old_pyproject_path)?;
-    let mut new_doc = read_and_parse_toml(&pyproject_path)?;
+    let mut doc = read_toml(&pyproject_path)?;
+    let old_doc = read_toml(&old_pyproject_path)?;
 
-    // Try Poetry 2.0 format first (project section)
-    if let Some(project) = old_doc.get("project") {
-        if let Some(description) = project.get("description") {
-            update_section(
-                &mut new_doc,
-                &["project", "description"],
-                description.clone(),
-            );
-        }
-        if let Some(version) = project.get("version") {
-            update_section(&mut new_doc, &["project", "version"], version.clone());
+    // Transfer basic metadata if available
+    if let Some(old_tool) = old_doc.get("tool") {
+        if let Some(old_poetry) = old_tool.get("poetry") {
+            // Transfer version if available
+            if let Some(version) = old_poetry.get("version").and_then(|v| v.as_str()) {
+                update_section(
+                    &mut doc,
+                    &["project", "version"],
+                    Item::Value(Value::String(Formatted::new(version.to_string()))),
+                );
+            }
+
+            // Transfer description if available
+            if let Some(desc) = old_poetry.get("description").and_then(|d| d.as_str()) {
+                update_section(
+                    &mut doc,
+                    &["project", "description"],
+                    Item::Value(Value::String(Formatted::new(desc.to_string()))),
+                );
+            }
         }
     }
 
-    // Fallback to Poetry 1.0 format (tool.poetry section)
-    if let Some(tool) = old_doc.get("tool") {
-        if let Some(poetry) = tool.get("poetry") {
-            if let Some(description) = poetry.get("description") {
-                update_section(
-                    &mut new_doc,
-                    &["project", "description"],
-                    description.clone(),
-                );
+    // Also check Poetry 2.0 style
+    if let Some(old_project) = old_doc.get("project") {
+        if let Some(version) = old_project.get("version").and_then(|v| v.as_str()) {
+            update_section(
+                &mut doc,
+                &["project", "version"],
+                Item::Value(Value::String(Formatted::new(version.to_string()))),
+            );
+        }
+
+        if let Some(desc) = old_project.get("description").and_then(|d| d.as_str()) {
+            update_section(
+                &mut doc,
+                &["project", "description"],
+                Item::Value(Value::String(Formatted::new(desc.to_string()))),
+            );
+        }
+    }
+
+    write_toml(&pyproject_path, &mut doc)?;
+    Ok(())
+}
+
+/// Updates the project version in pyproject.toml
+pub fn update_project_version(project_dir: &Path, version: &str) -> Result<()> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+    let mut doc = read_toml(&pyproject_path)?;
+
+    update_section(
+        &mut doc,
+        &["project", "version"],
+        Item::Value(Value::String(Formatted::new(version.to_string()))),
+    );
+
+    write_toml(&pyproject_path, &mut doc)?;
+    info!("Updated project version to {}", version);
+    Ok(())
+}
+
+/// Extracts Poetry package sources from old pyproject.toml
+pub fn extract_poetry_sources(project_dir: &Path) -> Result<Vec<toml::Value>> {
+    let old_pyproject_path = project_dir.join("old.pyproject.toml");
+    if !old_pyproject_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let content = fs::read_to_string(&old_pyproject_path).map_err(|e| Error::FileOperation {
+        path: old_pyproject_path.clone(),
+        message: format!("Failed to read old.pyproject.toml: {}", e),
+    })?;
+
+    let old_doc: toml::Value = toml::from_str(&content).map_err(Error::TomlSerde)?;
+
+    if let Some(sources) = old_doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("source"))
+        .and_then(|s| s.as_array())
+    {
+        Ok(sources.clone())
+    } else {
+        Ok(vec![])
+    }
+}
+
+/// Updates UV indices in pyproject.toml
+pub fn update_uv_indices(project_dir: &Path, sources: &[toml::Value]) -> Result<()> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+    let mut doc = read_toml(&pyproject_path)?;
+
+    let mut indices = Array::new();
+    for source in sources {
+        if let Some(url) = source.get("url").and_then(|u| u.as_str()) {
+            let mut table = InlineTable::new();
+
+            if let Some(name) = source.get("name").and_then(|n| n.as_str()) {
+                table.insert("name", Value::String(Formatted::new(name.to_string())));
             }
-            if let Some(version) = poetry.get("version") {
-                update_section(&mut new_doc, &["project", "version"], version.clone());
+
+            table.insert("url", Value::String(Formatted::new(url.to_string())));
+
+            indices.push(Value::InlineTable(table));
+        }
+    }
+
+    if !indices.is_empty() {
+        update_section(
+            &mut doc,
+            &["tool", "uv", "index"],
+            Item::Value(Value::Array(indices)),
+        );
+        write_toml(&pyproject_path, &mut doc)?;
+        info!("Migrated {} package sources to UV indices", sources.len());
+    }
+
+    Ok(())
+}
+
+/// Updates UV indices from URLs
+pub fn update_uv_indices_from_urls(project_dir: &Path, urls: &[String]) -> Result<()> {
+    if urls.is_empty() {
+        return Ok(());
+    }
+
+    let pyproject_path = project_dir.join("pyproject.toml");
+    let mut doc = read_toml(&pyproject_path)?;
+
+    let mut indices = Array::new();
+    for (i, url) in urls.iter().enumerate() {
+        let mut table = InlineTable::new();
+        table.insert(
+            "name",
+            Value::String(Formatted::new(format!("extra-{}", i + 1))),
+        );
+        table.insert("url", Value::String(Formatted::new(url.clone())));
+        indices.push(Value::InlineTable(table));
+    }
+
+    update_section(
+        &mut doc,
+        &["tool", "uv", "index"],
+        Item::Value(Value::Array(indices)),
+    );
+
+    write_toml(&pyproject_path, &mut doc)?;
+    info!("Added {} extra index URLs", urls.len());
+    Ok(())
+}
+
+/// Appends tool sections from old pyproject.toml to new one
+pub fn append_tool_sections(project_dir: &Path) -> Result<()> {
+    let old_pyproject_path = project_dir.join("old.pyproject.toml");
+    let pyproject_path = project_dir.join("pyproject.toml");
+
+    if !old_pyproject_path.exists() {
+        debug!("No old.pyproject.toml found, skipping tool section migration");
+        return Ok(());
+    }
+
+    let old_doc = read_toml(&old_pyproject_path)?;
+    let mut new_doc = read_toml(&pyproject_path)?;
+
+    // Copy tool sections except poetry
+    if let Some(old_tool) = old_doc.get("tool").and_then(|t| t.as_table()) {
+        for (key, value) in old_tool.iter() {
+            if key != "poetry" && !is_empty_section(value) {
+                // Check if the section already exists in the new document
+                let section_exists = new_doc.get("tool").and_then(|t| t.get(key)).is_some();
+
+                if !section_exists {
+                    let path = ["tool", key];
+                    update_section(&mut new_doc, &path, value.clone());
+                    debug!("Migrated tool.{} section", key);
+                } else {
+                    debug!("Skipping tool.{} section - already exists in target", key);
+                }
             }
         }
     }
@@ -57,11 +206,161 @@ pub fn update_pyproject_toml(project_dir: &Path, _extra_urls: &[String]) -> Resu
     Ok(())
 }
 
-pub fn update_description(project_dir: &Path, description: &str) -> Result<(), String> {
+/// Checks if a TOML item is empty
+fn is_empty_section(item: &Item) -> bool {
+    match item {
+        Item::Table(table) => table.is_empty() || table.iter().all(|(_, v)| is_empty_section(v)),
+        Item::Value(value) => {
+            if let Some(array) = value.as_array() {
+                array.is_empty()
+            } else {
+                false
+            }
+        }
+        Item::None => true,
+        Item::ArrayOfTables(array) => array.is_empty(),
+    }
+}
+
+/// Updates scripts section from Poetry to standard format
+pub fn update_scripts(project_dir: &Path) -> Result<bool> {
+    let old_pyproject_path = project_dir.join("old.pyproject.toml");
+    let pyproject_path = project_dir.join("pyproject.toml");
+
+    if !old_pyproject_path.exists() {
+        return Ok(false);
+    }
+
+    let old_doc = read_toml(&old_pyproject_path)?;
+    let mut new_doc = read_toml(&pyproject_path)?;
+
+    // Check for Poetry scripts
+    if let Some(scripts) = old_doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("scripts"))
+        .and_then(|s| s.as_table())
+    {
+        if !scripts.is_empty() {
+            let mut scripts_table = InlineTable::new();
+
+            for (name, value) in scripts.iter() {
+                if let Item::Value(Value::String(s)) = value {
+                    scripts_table.insert(name, Value::String(s.clone()));
+                }
+            }
+
+            if !scripts_table.is_empty() {
+                update_section(
+                    &mut new_doc,
+                    &["project", "scripts"],
+                    Item::Value(Value::InlineTable(scripts_table)),
+                );
+                write_toml(&pyproject_path, &mut new_doc)?;
+                info!("Migrated {} scripts", scripts.len());
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(false)
+}
+
+/// Extracts Poetry packages configuration
+pub fn extract_poetry_packages(doc: &DocumentMut) -> Vec<String> {
+    let mut packages = Vec::new();
+
+    if let Some(poetry_packages) = doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("packages"))
+        .and_then(|p| p.as_array())
+    {
+        for pkg in poetry_packages.iter() {
+            if let Some(table) = pkg.as_inline_table() {
+                if let Some(include) = table.get("include").and_then(|i| i.as_str()) {
+                    packages.push(include.to_string());
+                }
+            } else if let Some(pkg_str) = pkg.as_str() {
+                packages.push(pkg_str.to_string());
+            }
+        }
+    }
+
+    packages
+}
+
+/// Updates git dependencies in pyproject.toml
+pub fn update_git_dependencies(project_dir: &Path, git_deps: &[GitDependency]) -> Result<()> {
+    if git_deps.is_empty() {
+        return Ok(());
+    }
+
     let pyproject_path = project_dir.join("pyproject.toml");
     let mut doc = read_toml(&pyproject_path)?;
 
-    debug!("Updating project description");
+    for dep in git_deps {
+        let mut source_table = Table::new();
+        source_table.insert(
+            "git",
+            Item::Value(Value::String(Formatted::new(dep.git_url.clone()))),
+        );
+
+        if let Some(branch) = &dep.branch {
+            source_table.insert(
+                "branch",
+                Item::Value(Value::String(Formatted::new(branch.clone()))),
+            );
+        }
+
+        if let Some(tag) = &dep.tag {
+            source_table.insert(
+                "tag",
+                Item::Value(Value::String(Formatted::new(tag.clone()))),
+            );
+        }
+
+        if let Some(rev) = &dep.rev {
+            source_table.insert(
+                "rev",
+                Item::Value(Value::String(Formatted::new(rev.clone()))),
+            );
+        }
+
+        let path = ["tool", "uv", "sources", &dep.name];
+        update_section(&mut doc, &path, Item::Table(source_table));
+    }
+
+    write_toml(&pyproject_path, &mut doc)?;
+    info!("Migrated {} git dependencies", git_deps.len());
+    Ok(())
+}
+
+/// Extracts project name from pyproject.toml
+pub fn extract_project_name(project_dir: &Path) -> Result<Option<String>> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+    if !pyproject_path.exists() {
+        return Ok(None);
+    }
+
+    let doc = read_toml(&pyproject_path)?;
+
+    if let Some(name) = doc
+        .get("project")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+    {
+        Ok(Some(name.to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Updates project description
+pub fn update_description(project_dir: &Path, description: &str) -> Result<()> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+    let mut doc = read_toml(&pyproject_path)?;
+
     update_section(
         &mut doc,
         &["project", "description"],
@@ -69,15 +368,16 @@ pub fn update_description(project_dir: &Path, description: &str) -> Result<(), S
     );
 
     write_toml(&pyproject_path, &mut doc)?;
-    info!("Successfully updated project description");
+    info!("Updated project description");
     Ok(())
 }
 
-pub fn update_url(project_dir: &Path, url: &str) -> Result<(), String> {
+/// Updates project URL
+pub fn update_url(project_dir: &Path, url: &str) -> Result<()> {
     let pyproject_path = project_dir.join("pyproject.toml");
     let mut doc = read_toml(&pyproject_path)?;
 
-    let mut urls_table = toml_edit::InlineTable::new();
+    let mut urls_table = InlineTable::new();
     urls_table.insert("repository", Value::String(Formatted::new(url.to_string())));
 
     update_section(
@@ -87,578 +387,6 @@ pub fn update_url(project_dir: &Path, url: &str) -> Result<(), String> {
     );
 
     write_toml(&pyproject_path, &mut doc)?;
-    info!("Successfully updated project URL");
+    info!("Updated project URL");
     Ok(())
-}
-
-pub fn migrate_poetry_scripts(doc: &DocumentMut) -> Option<Table> {
-    // First try looking in the old Poetry style (tool.poetry.scripts)
-    if let Some(poetry_scripts) = doc
-        .get("tool")
-        .and_then(|tool| tool.get("poetry"))
-        .and_then(|poetry| poetry.get("scripts"))
-        .and_then(|scripts| scripts.as_table())
-    {
-        let mut scripts_table = Table::new();
-        scripts_table.set_implicit(true);
-
-        for (script_name, script_value) in poetry_scripts.iter() {
-            if let Some(script_str) = script_value.as_str() {
-                let sanitized_name = sanitize_script_name(script_name);
-                let converted_script = convert_script_format(script_str);
-                scripts_table.insert(
-                    &sanitized_name,
-                    toml_edit::Item::Value(Value::String(Formatted::new(converted_script))),
-                );
-            }
-        }
-
-        if !scripts_table.is_empty() {
-            return Some(scripts_table);
-        }
-    }
-
-    // Then check for Poetry 2.0 style (project.scripts)
-    if let Some(project_scripts) = doc
-        .get("project")
-        .and_then(|project| project.get("scripts"))
-        .and_then(|scripts| scripts.as_table())
-    {
-        let mut scripts_table = Table::new();
-        scripts_table.set_implicit(true);
-
-        for (script_name, script_value) in project_scripts.iter() {
-            if let Some(script_str) = script_value.as_str() {
-                let sanitized_name = sanitize_script_name(script_name);
-                let converted_script = convert_script_format(script_str);
-                scripts_table.insert(
-                    &sanitized_name,
-                    toml_edit::Item::Value(Value::String(Formatted::new(converted_script))),
-                );
-            }
-        }
-
-        if !scripts_table.is_empty() {
-            return Some(scripts_table);
-        }
-    }
-
-    None
-}
-
-/// Updates the scripts in pyproject.toml
-/// Returns true if the project contains scripts
-pub fn update_scripts(project_dir: &Path) -> Result<bool, String> {
-    let pyproject_path = project_dir.join("pyproject.toml");
-    let old_pyproject_path = project_dir.join("old.pyproject.toml");
-
-    // First read the new pyproject.toml
-    let mut doc = read_and_parse_toml(&pyproject_path)?;
-
-    // Check and sanitize any existing scripts in the new pyproject.toml
-    if let Some(project) = doc.get_mut("project") {
-        if let Some(scripts) = project.get("scripts").and_then(|s| s.as_table()) {
-            let mut sanitized_scripts = Table::new();
-            for (name, value) in scripts.iter() {
-                let sanitized_name = sanitize_script_name(name);
-                sanitized_scripts.insert(&sanitized_name, value.clone());
-            }
-            if let Some(table) = project.as_table_mut() {
-                table.remove("scripts");
-                table.insert("scripts", Item::Table(sanitized_scripts));
-            }
-        }
-    }
-
-    // Track if we found any scripts
-    let mut has_scripts = false;
-
-    // Handle migration from old pyproject.toml if it exists
-    if old_pyproject_path.exists() {
-        let old_doc = read_and_parse_toml(&old_pyproject_path)?;
-        if let Some(scripts_table) = migrate_poetry_scripts(&old_doc) {
-            has_scripts = !scripts_table.is_empty();
-
-            update_section(
-                &mut doc,
-                &["project", "scripts"],
-                Item::Table(scripts_table),
-            );
-
-            // Remove the old scripts section if it exists
-            if let Some(tool) = doc.get_mut("tool") {
-                if let Some(poetry) = tool.get_mut("poetry") {
-                    if let Some(table) = poetry.as_table_mut() {
-                        table.remove("scripts");
-                    }
-                }
-            }
-        }
-    }
-
-    write_toml(&pyproject_path, &mut doc)?;
-    info!("Successfully processed scripts in pyproject.toml");
-
-    Ok(has_scripts)
-}
-
-fn sanitize_script_name(name: &str) -> String {
-    // List of reserved names that should be modified
-    const RESERVED_NAMES: [&str; 1] = ["python"];
-
-    let sanitized = name.trim().to_lowercase();
-    if RESERVED_NAMES.contains(&sanitized.as_str()) {
-        let new_name = format!("{}_script", sanitized);
-        log::warn!(
-            "Script name '{}' is reserved - automatically renamed to '{}'",
-            name,
-            new_name
-        );
-        new_name
-    } else {
-        name.to_string()
-    }
-}
-
-fn convert_script_format(poetry_script: &str) -> String {
-    let script = poetry_script.trim_matches(|c| c == '\'' || c == '"');
-    sanitize_script_name(script)
-}
-
-pub fn update_project_version(project_dir: &Path, version: &str) -> Result<(), String> {
-    let pyproject_path = project_dir.join("pyproject.toml");
-    let mut doc = read_toml(&pyproject_path)?;
-
-    debug!("Updating project version to {}", version);
-    update_section(
-        &mut doc,
-        &["project", "version"],
-        Item::Value(Value::String(Formatted::new(version.to_string()))),
-    );
-
-    write_toml(&pyproject_path, &mut doc)?;
-    info!("Successfully updated project version");
-    Ok(())
-}
-
-pub fn append_tool_sections(project_dir: &Path) -> Result<(), String> {
-    let old_pyproject_path = project_dir.join("old.pyproject.toml");
-    let pyproject_path = project_dir.join("pyproject.toml");
-
-    if !old_pyproject_path.exists() {
-        debug!("old.pyproject.toml not found. Skipping tool section migration.");
-        return Ok(());
-    }
-
-    debug!("Reading old and new pyproject.toml files");
-    let old_doc = read_toml(&old_pyproject_path)?;
-    let mut new_doc = read_toml(&pyproject_path)?;
-
-    // Only proceed if there are tool sections to migrate
-    if let Some(tool) = old_doc.get("tool") {
-        if let Some(tool_table) = tool.as_table() {
-            let existing_sections: Vec<String> = new_doc
-                .get("tool")
-                .and_then(|t| t.as_table())
-                .map(|t| t.iter().map(|(k, _)| k.to_string()).collect())
-                .unwrap_or_default();
-
-            // Track if any sections were actually copied
-            let mut sections_copied = false;
-
-            // Copy each non-poetry tool section that doesn't already exist
-            for (section_name, section_value) in tool_table.iter() {
-                if section_name != "poetry"
-                    && !existing_sections.contains(&section_name.to_string())
-                    && !section_value.as_table().is_some_and(|t| t.is_empty())
-                {
-                    debug!("Copying tool section: {}", section_name);
-                    update_section(&mut new_doc, &["tool", section_name], section_value.clone());
-                    sections_copied = true;
-                }
-            }
-
-            if sections_copied {
-                write_toml(&pyproject_path, &mut new_doc)?;
-                info!("Successfully managed tool sections in new pyproject.toml");
-            } else {
-                debug!("No tool sections needed migration");
-            }
-        }
-    }
-
-    Ok(())
-}
-
-pub fn update_uv_indices(project_dir: &Path, sources: &[(String, String)]) -> Result<(), String> {
-    if sources.is_empty() {
-        return Ok(());
-    }
-
-    let pyproject_path = project_dir.join("pyproject.toml");
-    let mut doc = read_and_parse_toml(&pyproject_path)?;
-
-    let index_array: Array = sources
-        .iter()
-        .map(|(name, url)| {
-            let mut index_table = toml_edit::InlineTable::new();
-            index_table.insert("name", Value::String(Formatted::new(name.clone())));
-            index_table.insert("url", Value::String(Formatted::new(url.clone())));
-            Value::InlineTable(index_table)
-        })
-        .collect();
-
-    update_section(
-        &mut doc,
-        &["tool", "uv", "index"],
-        Item::Value(Value::Array(index_array)),
-    );
-
-    // Ensure the tool.uv section is properly formatted
-    if let Some(tool) = doc.get_mut("tool") {
-        if let Some(uv) = tool.get_mut("uv") {
-            if let Some(uv_table) = uv.as_table_mut() {
-                // Make sure the table is created with proper formatting
-                uv_table.set_implicit(true);
-            }
-        }
-    }
-
-    write_toml(&pyproject_path, &mut doc)?;
-
-    // Verify the section was written
-    let content = std::fs::read_to_string(&pyproject_path)
-        .map_err(|e| format!("Failed to read updated pyproject.toml: {}", e))?;
-
-    if !content.contains("tool.uv") {
-        // If the section wasn't written properly, try a different approach
-        log::warn!(
-            "UV index section may not have been written correctly. Attempting alternative method."
-        );
-
-        // Read the TOML file again
-        let mut doc = read_and_parse_toml(&pyproject_path)?;
-
-        // Create a table for the UV section
-        let mut uv_table = Table::new();
-        uv_table.set_implicit(true);
-
-        // Create a table for the index section
-        let mut index_array = Array::new();
-        for (name, url) in sources {
-            let mut source_table = toml_edit::InlineTable::new();
-            source_table.insert("name", Value::String(Formatted::new(name.clone())));
-            source_table.insert("url", Value::String(Formatted::new(url.clone())));
-            index_array.push(Value::InlineTable(source_table));
-        }
-
-        // Add the index array to the UV table
-        uv_table.insert("index", Item::Value(Value::Array(index_array)));
-
-        // Make sure there's a tool section
-        if !doc.contains_key("tool") {
-            let mut tool_table = Table::new();
-            tool_table.insert("uv", Item::Table(uv_table));
-            doc.insert("tool", Item::Table(tool_table));
-        } else if let Some(tool) = doc.get_mut("tool").and_then(|t| t.as_table_mut()) {
-            tool.insert("uv", Item::Table(uv_table));
-        }
-
-        // Write the TOML back to the file
-        write_toml(&pyproject_path, &mut doc)?;
-    }
-
-    info!(
-        "Successfully migrated {} package sources to UV indices",
-        sources.len()
-    );
-    Ok(())
-}
-
-/// Updates the uv.index section with index URLs from command line
-pub fn update_uv_indices_from_urls(project_dir: &Path, urls: &[String]) -> Result<(), String> {
-    if urls.is_empty() {
-        return Ok(());
-    }
-
-    let pyproject_path = project_dir.join("pyproject.toml");
-    let mut doc = read_and_parse_toml(&pyproject_path)?;
-
-    let index_array: Array = urls
-        .iter()
-        .enumerate()
-        .map(|(i, url)| {
-            let mut index_table = toml_edit::InlineTable::new();
-            // Generate a simple name like "custom1", "custom2" etc.
-            let name = format!("custom{}", i + 1);
-            index_table.insert("name", Value::String(Formatted::new(name)));
-            index_table.insert("url", Value::String(Formatted::new(url.clone())));
-            Value::InlineTable(index_table)
-        })
-        .collect();
-
-    update_section(
-        &mut doc,
-        &["tool", "uv", "index"],
-        Item::Value(Value::Array(index_array)),
-    );
-    write_toml(&pyproject_path, &mut doc)?;
-
-    info!("Added {} custom index URLs to pyproject.toml", urls.len());
-    Ok(())
-}
-
-/// Extracts Poetry source configurations from a pyproject.toml file
-///
-/// This function retrieves all package sources (index URLs) configured in Poetry,
-/// supporting both array-of-tables and array formats.
-pub fn extract_poetry_sources(project_dir: &Path) -> Result<Vec<(String, String)>, String> {
-    let old_pyproject_path = project_dir.join("old.pyproject.toml");
-    if !old_pyproject_path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let doc = read_and_parse_toml(&old_pyproject_path)?;
-    let mut sources = Vec::new();
-
-    // Try to extract sources from the TOML document
-    if let Some(poetry_tool) = doc.get("tool").and_then(|tool| tool.get("poetry")) {
-        // First try to extract as array-of-tables (common format)
-        if let Some(array_of_tables) = poetry_tool
-            .get("source")
-            .and_then(|source| source.as_array_of_tables())
-        {
-            for table in array_of_tables {
-                if let (Some(name), Some(url)) = (
-                    table.get("name").and_then(|n| n.as_str()),
-                    table.get("url").and_then(|u| u.as_str()),
-                ) {
-                    sources.push((name.to_string(), url.to_string()));
-                }
-            }
-        }
-
-        // If no sources were found, try parsing as regular array
-        if sources.is_empty() {
-            // Fall back to parsing as regular TOML Value
-            if let Ok(parsed_toml) = toml::from_str::<toml::Value>(&doc.to_string()) {
-                if let Some(source_array) = parsed_toml
-                    .get("tool")
-                    .and_then(|tool| tool.get("poetry"))
-                    .and_then(|poetry| poetry.get("source"))
-                    .and_then(|source| source.as_array())
-                {
-                    for source in source_array {
-                        if let (Some(name), Some(url)) = (
-                            source.get("name").and_then(|n| n.as_str()),
-                            source.get("url").and_then(|u| u.as_str()),
-                        ) {
-                            sources.push((name.to_string(), url.to_string()));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(sources)
-}
-
-/// Extracts the project name from pyproject.toml
-pub fn extract_project_name(project_dir: &Path) -> Result<Option<String>, String> {
-    let pyproject_path = project_dir.join("pyproject.toml");
-    if !pyproject_path.exists() {
-        return Ok(None);
-    }
-
-    let doc = read_toml(&pyproject_path)?;
-
-    // Try project section first
-    if let Some(name) = doc
-        .get("project")
-        .and_then(|p| p.get("name"))
-        .and_then(|n| n.as_str())
-    {
-        return Ok(Some(name.to_string()));
-    }
-
-    // Then try tool.poetry
-    if let Some(name) = doc
-        .get("tool")
-        .and_then(|t| t.get("poetry"))
-        .and_then(|p| p.get("name"))
-        .and_then(|n| n.as_str())
-    {
-        return Ok(Some(name.to_string()));
-    }
-
-    // Finally try the old pyproject.toml
-    let old_pyproject_path = project_dir.join("old.pyproject.toml");
-    if old_pyproject_path.exists() {
-        let old_doc = read_toml(&old_pyproject_path)?;
-
-        // Try project section in old file
-        if let Some(name) = old_doc
-            .get("project")
-            .and_then(|p| p.get("name"))
-            .and_then(|n| n.as_str())
-        {
-            return Ok(Some(name.to_string()));
-        }
-
-        // Try tool.poetry in old file
-        if let Some(name) = old_doc
-            .get("tool")
-            .and_then(|t| t.get("poetry"))
-            .and_then(|p| p.get("name"))
-            .and_then(|n| n.as_str())
-        {
-            return Ok(Some(name.to_string()));
-        }
-    }
-
-    Ok(None)
-}
-
-/// Updates the pyproject.toml with git dependencies from Poetry
-pub fn update_git_dependencies(
-    project_dir: &Path,
-    git_dependencies: &[GitDependency],
-) -> Result<(), String> {
-    if git_dependencies.is_empty() {
-        return Ok(());
-    }
-
-    let pyproject_path = project_dir.join("pyproject.toml");
-    let mut doc = read_toml(&pyproject_path)?;
-
-    for git_dep in git_dependencies {
-        let mut source_table = Table::new();
-        source_table.set_implicit(true);
-
-        // Add git URL
-        source_table.insert(
-            "git",
-            Item::Value(Value::String(Formatted::new(git_dep.git_url.clone()))),
-        );
-
-        // Add branch if present
-        if let Some(branch) = &git_dep.branch {
-            source_table.insert(
-                "branch",
-                Item::Value(Value::String(Formatted::new(branch.clone()))),
-            );
-        }
-
-        // Add tag if present
-        if let Some(tag) = &git_dep.tag {
-            source_table.insert(
-                "tag",
-                Item::Value(Value::String(Formatted::new(tag.clone()))),
-            );
-        }
-
-        // Add rev if present
-        if let Some(rev) = &git_dep.rev {
-            source_table.insert(
-                "rev",
-                Item::Value(Value::String(Formatted::new(rev.clone()))),
-            );
-        }
-
-        // Add to [tool.uv.sources] section
-        update_section(
-            &mut doc,
-            &["tool", "uv", "sources", &git_dep.name],
-            Item::Table(source_table),
-        );
-    }
-
-    write_toml(&pyproject_path, &mut doc)?;
-
-    info!(
-        "Successfully added {} git dependencies to [tool.uv.sources]",
-        git_dependencies.len()
-    );
-    Ok(())
-}
-
-/// Extracts packages configuration from Poetry format and converts to Hatchling format
-pub fn extract_poetry_packages(doc: &DocumentMut) -> Vec<String> {
-    let mut packages_vec = Vec::new();
-
-    // Check tool.poetry.packages
-    if let Some(packages) = doc
-        .get("tool")
-        .and_then(|t| t.get("poetry"))
-        .and_then(|p| p.get("packages"))
-        .and_then(|p| p.as_array())
-    {
-        for package in packages.iter() {
-            if let Some(table) = package.as_inline_table() {
-                // Handle { include = "foo", from = "src" } format
-                if let (Some(include), Some(from)) = (
-                    table.get("include").and_then(|i| i.as_str()),
-                    table.get("from").and_then(|f| f.as_str()),
-                ) {
-                    packages_vec.push(format!("{}/{}", from, include));
-                } else if let Some(include) = table.get("include").and_then(|i| i.as_str()) {
-                    // Handle { include = "foo" } format (no from)
-                    packages_vec.push(include.to_string());
-                }
-            } else if let Some(include) = package.as_str() {
-                // Handle simple string format
-                packages_vec.push(include.to_string());
-            }
-        }
-    }
-
-    // Also check Poetry 2.0 style in project section
-    if let Some(packages) = doc
-        .get("project")
-        .and_then(|p| p.get("packages"))
-        .and_then(|p| p.as_array())
-    {
-        for package in packages.iter() {
-            if let Some(table) = package.as_inline_table() {
-                // Handle { include = "foo", from = "src" } format
-                if let (Some(include), Some(from)) = (
-                    table.get("include").and_then(|i| i.as_str()),
-                    table.get("from").and_then(|f| f.as_str()),
-                ) {
-                    packages_vec.push(format!("{}/{}", from, include));
-                } else if let Some(include) = table.get("include").and_then(|i| i.as_str()) {
-                    // Handle { include = "foo" } format (no from)
-                    packages_vec.push(include.to_string());
-                }
-            } else if let Some(include) = package.as_str() {
-                // Handle simple string format
-                packages_vec.push(include.to_string());
-            }
-        }
-    }
-
-    packages_vec
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_script_name_sanitization() {
-        assert_eq!(sanitize_script_name("test"), "test");
-        assert_eq!(sanitize_script_name("python"), "python_script");
-        assert_eq!(sanitize_script_name("PYTHON"), "python_script");
-        assert_eq!(sanitize_script_name(" python "), "python_script");
-        assert_eq!(sanitize_script_name("other"), "other");
-    }
-
-    #[test]
-    fn test_convert_script_format() {
-        assert_eq!(convert_script_format("\"test-command\""), "test-command");
-        assert_eq!(convert_script_format("'python-run'"), "python-run");
-        assert_eq!(convert_script_format("python"), "python_script");
-        assert_eq!(convert_script_format("\"python\""), "python_script");
-    }
 }

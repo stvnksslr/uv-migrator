@@ -384,7 +384,7 @@ description = "Test project"
 
     // Update URL
     if let Some(url) = SetupPyMigrationSource::extract_url(&project_dir).unwrap() {
-        uv_migrator::utils::update_url(&project_dir, &url).unwrap();
+        uv_migrator::utils::pyproject::update_url(&project_dir, &url).unwrap();
     }
 
     // Update authors
@@ -449,7 +449,7 @@ requires-python = ">=3.8"
 
     // Update URL
     if let Some(url) = SetupPyMigrationSource::extract_url(&project_dir).unwrap() {
-        uv_migrator::utils::update_url(&project_dir, &url).unwrap();
+        uv_migrator::utils::pyproject::update_url(&project_dir, &url).unwrap();
     }
 
     // Update authors

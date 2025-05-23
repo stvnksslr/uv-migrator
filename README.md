@@ -36,11 +36,8 @@ cargo install uv-migrator
 Package Formats  
 ✅ setup.py packages  
 ✅ poetry packages
+✅ anaconda
 
-## Coming Soon
-
-Project formats  
-🔄 anaconda projects
 
 ## Usage
 
