@@ -583,6 +583,64 @@ pub fn update_git_dependencies(
     Ok(())
 }
 
+/// Extracts packages configuration from Poetry format and converts to Hatchling format
+pub fn extract_poetry_packages(doc: &DocumentMut) -> Vec<String> {
+    let mut packages_vec = Vec::new();
+
+    // Check tool.poetry.packages
+    if let Some(packages) = doc
+        .get("tool")
+        .and_then(|t| t.get("poetry"))
+        .and_then(|p| p.get("packages"))
+        .and_then(|p| p.as_array())
+    {
+        for package in packages.iter() {
+            if let Some(table) = package.as_inline_table() {
+                // Handle { include = "foo", from = "src" } format
+                if let (Some(include), Some(from)) = (
+                    table.get("include").and_then(|i| i.as_str()),
+                    table.get("from").and_then(|f| f.as_str()),
+                ) {
+                    packages_vec.push(format!("{}/{}", from, include));
+                } else if let Some(include) = table.get("include").and_then(|i| i.as_str()) {
+                    // Handle { include = "foo" } format (no from)
+                    packages_vec.push(include.to_string());
+                }
+            } else if let Some(include) = package.as_str() {
+                // Handle simple string format
+                packages_vec.push(include.to_string());
+            }
+        }
+    }
+
+    // Also check Poetry 2.0 style in project section
+    if let Some(packages) = doc
+        .get("project")
+        .and_then(|p| p.get("packages"))
+        .and_then(|p| p.as_array())
+    {
+        for package in packages.iter() {
+            if let Some(table) = package.as_inline_table() {
+                // Handle { include = "foo", from = "src" } format
+                if let (Some(include), Some(from)) = (
+                    table.get("include").and_then(|i| i.as_str()),
+                    table.get("from").and_then(|f| f.as_str()),
+                ) {
+                    packages_vec.push(format!("{}/{}", from, include));
+                } else if let Some(include) = table.get("include").and_then(|i| i.as_str()) {
+                    // Handle { include = "foo" } format (no from)
+                    packages_vec.push(include.to_string());
+                }
+            } else if let Some(include) = package.as_str() {
+                // Handle simple string format
+                packages_vec.push(include.to_string());
+            }
+        }
+    }
+
+    packages_vec
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

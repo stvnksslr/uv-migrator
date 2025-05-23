@@ -2,7 +2,9 @@ use crate::error::Result;
 use crate::migrators::detect::detect_project_type;
 use crate::models::project::{PoetryProjectType, ProjectType};
 use crate::models::{Dependency, DependencyType};
-use crate::utils::{file_ops::FileTrackerGuard, uv::UvCommandBuilder};
+use crate::utils::{
+    file_ops::FileTrackerGuard, pyproject::extract_poetry_packages, uv::UvCommandBuilder,
+};
 use log::info;
 use semver::Version;
 use std::collections::HashMap;
@@ -220,56 +222,25 @@ pub fn perform_poetry_migration_with_type(
     if old_pyproject_path.exists() && matches!(project_type, PoetryProjectType::Package) {
         let doc = read_toml(&old_pyproject_path)?;
 
-        // Try to find packages configuration in either tool.poetry or project.packages
-        let packages = if let Some(packages) = doc
-            .get("tool")
-            .and_then(|t| t.get("poetry"))
-            .and_then(|p| p.get("packages"))
-            .and_then(|p| p.as_array())
-        {
-            Some(packages)
-        } else {
-            doc.get("project")
-                .and_then(|p| p.get("packages"))
-                .and_then(|p| p.as_array())
-        };
+        let packages_vec = extract_poetry_packages(&doc);
+        if !packages_vec.is_empty() {
+            let pyproject_path = project_dir.join("pyproject.toml");
+            file_tracker.track_file(&pyproject_path)?;
+            let mut doc = read_toml(&pyproject_path)?;
 
-        if let Some(packages) = packages {
-            if !packages.is_empty() {
-                let pyproject_path = project_dir.join("pyproject.toml");
-                file_tracker.track_file(&pyproject_path)?;
-                let mut doc = read_toml(&pyproject_path)?;
-
-                let mut packages_vec = Vec::new();
-                for package in packages.iter() {
-                    if let Some(include) = package
-                        .as_inline_table()
-                        .and_then(|t| t.get("include"))
-                        .and_then(|i| i.as_str())
-                    {
-                        packages_vec.push(include.to_string());
-                    } else if let Some(include) = package.as_str() {
-                        packages_vec.push(include.to_string());
-                    }
-                }
-
-                if !packages_vec.is_empty() {
-                    let mut packages_array = toml_edit::Array::new();
-                    for pkg in packages_vec {
-                        packages_array
-                            .push(toml_edit::Value::String(toml_edit::Formatted::new(pkg)));
-                    }
-
-                    update_section(
-                        &mut doc,
-                        &["tool", "hatch", "build", "targets", "wheel", "packages"],
-                        toml_edit::Item::Value(toml_edit::Value::Array(packages_array)),
-                    );
-
-                    write_toml(&pyproject_path, &mut doc)?;
-                    info!("Migrated Poetry packages configuration to Hatchling");
-                }
+            let mut packages_array = toml_edit::Array::new();
+            for pkg in packages_vec {
+                packages_array.push(toml_edit::Value::String(toml_edit::Formatted::new(pkg)));
             }
+
+            update_section(
+                &mut doc,
+                &["tool", "hatch", "build", "targets", "wheel", "packages"],
+                toml_edit::Item::Value(toml_edit::Value::Array(packages_array)),
+            );
+
+            write_toml(&pyproject_path, &mut doc)?;
+            info!("Migrated Poetry packages configuration to Hatchling");
         }
     }
 
