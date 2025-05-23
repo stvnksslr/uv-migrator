@@ -6,7 +6,7 @@ use uv_migrator::migrators::MigrationSource;
 use uv_migrator::migrators::poetry::PoetryMigrationSource;
 use uv_migrator::migrators::{self};
 use uv_migrator::utils::author::extract_authors_from_poetry;
-use uv_migrator::utils::update_pyproject_toml;
+use uv_migrator::utils::pyproject::update_pyproject_toml;
 
 /// Helper function to create a temporary test project with a pyproject.toml file.
 ///
@@ -339,7 +339,7 @@ pytest-cov = "^4.1.0"
 mod tests {
     use std::fs;
     use tempfile::TempDir;
-    use uv_migrator::utils::update_pyproject_toml;
+    use uv_migrator::utils::pyproject::update_pyproject_toml;
 
     /// Helper function to create a temporary test directory.
     ///
@@ -385,7 +385,8 @@ description = "Add your description here"
             .map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
 
         // Run the migration
-        update_pyproject_toml(test_dir.path(), &[])?;
+        update_pyproject_toml(test_dir.path(), &[])
+            .map_err(|e| format!("Failed to update pyproject.toml: {}", e))?;
 
         // Read the result
         let result = fs::read_to_string(test_dir.path().join("pyproject.toml"))
@@ -436,7 +437,8 @@ description = "Add your description here"
             .map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
 
         // Run the migration
-        update_pyproject_toml(test_dir.path(), &[])?;
+        update_pyproject_toml(test_dir.path(), &[])
+            .map_err(|e| format!("Failed to update pyproject.toml: {}", e))?;
 
         // Read the result
         let result = fs::read_to_string(test_dir.path().join("pyproject.toml"))
@@ -479,7 +481,8 @@ description = "Add your description here"
             .map_err(|e| format!("Failed to write pyproject.toml: {}", e))?;
 
         // Run the migration
-        update_pyproject_toml(test_dir.path(), &[])?;
+        update_pyproject_toml(test_dir.path(), &[])
+            .map_err(|e| format!("Failed to update pyproject.toml: {}", e))?;
 
         // Read the result
         let result = fs::read_to_string(test_dir.path().join("pyproject.toml"))
@@ -891,7 +894,8 @@ description = "Add your description here"
 "#;
     fs::write(test_dir.path().join("pyproject.toml"), new_content).map_err(|e| e.to_string())?;
 
-    update_pyproject_toml(test_dir.path(), &[])?;
+    update_pyproject_toml(test_dir.path(), &[])
+        .map_err(|e| format!("Failed to update pyproject.toml: {}", e))?;
 
     let result =
         fs::read_to_string(test_dir.path().join("pyproject.toml")).map_err(|e| e.to_string())?;

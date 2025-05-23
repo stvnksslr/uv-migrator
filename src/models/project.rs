@@ -12,6 +12,8 @@ pub enum ProjectType {
     Requirements,
     /// Setup.py based project
     SetupPy,
+    /// Conda environment project
+    Conda,
 }
 
 /// Distinguishes between Poetry application and package projects

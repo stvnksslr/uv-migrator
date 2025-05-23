@@ -2,15 +2,14 @@ use crate::error::Result;
 use crate::migrators::detect::detect_project_type;
 use crate::models::project::{PoetryProjectType, ProjectType};
 use crate::models::{Dependency, DependencyType};
-use crate::utils::{
-    file_ops::FileTrackerGuard, pyproject::extract_poetry_packages, uv::UvCommandBuilder,
-};
+use crate::utils::{file_ops::FileTrackerGuard, uv::UvCommandBuilder};
 use log::info;
 use semver::Version;
 use std::collections::HashMap;
 use std::path::Path;
 
 pub mod common;
+pub mod conda;
 pub mod detect;
 pub mod pipenv;
 pub mod poetry;
@@ -70,7 +69,7 @@ impl MigrationTool for UvTool {
             &ProjectType::Poetry(PoetryProjectType::Package) | &ProjectType::SetupPy
         );
 
-        // Extract Python version for Poetry projects
+        // Extract Python version for Poetry and Conda projects
         let python_version = match project_type {
             ProjectType::Poetry(_) => {
                 match poetry::PoetryMigrationSource::extract_python_version(project_dir)? {
@@ -80,6 +79,23 @@ impl MigrationTool for UvTool {
                     }
                     None => {
                         info!("No Python version constraint found, using --no-pin-python");
+                        None
+                    }
+                }
+            }
+            ProjectType::Conda => {
+                match conda::CondaMigrationSource::extract_python_version_from_environment(
+                    project_dir,
+                )? {
+                    Some(version) => {
+                        info!(
+                            "Found Python version constraint in Conda environment: {}",
+                            version
+                        );
+                        Some(version)
+                    }
+                    None => {
+                        info!("No Python version constraint found in Conda environment");
                         None
                     }
                 }
@@ -205,8 +221,9 @@ impl MigrationTool for UvTool {
 // These functions have been moved to common.rs
 use crate::utils::toml::{read_toml, update_section, write_toml};
 pub use common::{
-    merge_dependency_groups, perform_common_migrations, perform_pipenv_migration,
-    perform_poetry_migration, perform_requirements_migration, perform_setup_py_migration,
+    merge_dependency_groups, perform_common_migrations, perform_conda_migration,
+    perform_pipenv_migration, perform_poetry_migration, perform_requirements_migration,
+    perform_setup_py_migration,
 };
 
 pub fn perform_poetry_migration_with_type(
@@ -222,7 +239,7 @@ pub fn perform_poetry_migration_with_type(
     if old_pyproject_path.exists() && matches!(project_type, PoetryProjectType::Package) {
         let doc = read_toml(&old_pyproject_path)?;
 
-        let packages_vec = extract_poetry_packages(&doc);
+        let packages_vec = crate::utils::pyproject::extract_poetry_packages(&doc);
         if !packages_vec.is_empty() {
             let pyproject_path = project_dir.join("pyproject.toml");
             file_tracker.track_file(&pyproject_path)?;
@@ -310,6 +327,7 @@ pub fn run_migration(
             ProjectType::Pipenv => Box::new(pipenv::PipenvMigrationSource),
             ProjectType::Requirements => Box::new(requirements::RequirementsMigrationSource),
             ProjectType::SetupPy => Box::new(setup_py::SetupPyMigrationSource),
+            ProjectType::Conda => Box::new(conda::CondaMigrationSource),
         };
 
         let mut dependencies = migration_source.extract_dependencies(project_dir)?;
@@ -384,7 +402,11 @@ pub fn run_migration(
                 ProjectType::Requirements => {
                     perform_requirements_migration(project_dir, &mut file_tracker)?
                 }
+                ProjectType::Conda => perform_conda_migration(project_dir, &mut file_tracker)?,
             }
+        } else if matches!(project_type, ProjectType::Conda) {
+            // For Conda projects without existing pyproject.toml
+            perform_conda_migration(project_dir, &mut file_tracker)?;
         }
 
         // Cleanup

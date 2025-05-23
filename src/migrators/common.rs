@@ -7,10 +7,8 @@ use crate::utils::{
     author::extract_authors_from_poetry,
     author::extract_authors_from_setup_py,
     file_ops::FileTrackerGuard,
-    parse_pip_conf, pyproject,
-    pyproject::extract_poetry_packages,
+    parse_pip_conf,
     toml::{read_toml, update_section, write_toml},
-    update_pyproject_toml, update_url,
 };
 use log::info;
 use std::path::Path;
@@ -39,12 +37,12 @@ pub fn perform_common_migrations(
     let pyproject_path = project_dir.join("pyproject.toml");
 
     file_tracker.track_file(&pyproject_path)?;
-    update_pyproject_toml(project_dir, &[])?;
+    crate::utils::pyproject::update_pyproject_toml(project_dir, &[])?;
 
     if let Some(version) = crate::utils::version::extract_version(project_dir)? {
         info!("Migrating version from setup.py");
         file_tracker.track_file(&pyproject_path)?;
-        pyproject::update_project_version(project_dir, &version)?;
+        crate::utils::pyproject::update_project_version(project_dir, &version)?;
     }
 
     let mut extra_urls = Vec::new();
@@ -61,12 +59,12 @@ pub fn perform_common_migrations(
     if !extra_urls.is_empty() {
         file_tracker.track_file(&pyproject_path)?;
         // Update pyproject.toml with extra URLs
-        pyproject::update_uv_indices_from_urls(project_dir, &extra_urls)?;
+        crate::utils::pyproject::update_uv_indices_from_urls(project_dir, &extra_urls)?;
     }
 
     info!("Migrating Tool sections");
     file_tracker.track_file(&pyproject_path)?;
-    pyproject::append_tool_sections(project_dir)?;
+    crate::utils::pyproject::append_tool_sections(project_dir)?;
 
     info!("Reordering pyproject.toml sections");
     file_tracker.track_file(&pyproject_path)?;
@@ -84,10 +82,10 @@ pub fn perform_poetry_migration(
     let old_pyproject_path = project_dir.join("old.pyproject.toml");
 
     info!("Checking for Poetry package sources to migrate");
-    let sources = pyproject::extract_poetry_sources(project_dir)?;
+    let sources = crate::utils::pyproject::extract_poetry_sources(project_dir)?;
     if !sources.is_empty() {
         file_tracker.track_file(&pyproject_path)?;
-        pyproject::update_uv_indices(project_dir, &sources)?;
+        crate::utils::pyproject::update_uv_indices(project_dir, &sources)?;
     }
 
     info!("Migrating Poetry authors");
@@ -114,7 +112,7 @@ pub fn perform_poetry_migration(
 
     info!("Migrating Poetry scripts");
     file_tracker.track_file(&pyproject_path)?;
-    let has_scripts = pyproject::update_scripts(project_dir)?;
+    let has_scripts = crate::utils::pyproject::update_scripts(project_dir)?;
 
     info!("Checking Poetry build system");
 
@@ -126,7 +124,7 @@ pub fn perform_poetry_migration(
         let old_doc = read_toml(&old_pyproject_path)?;
 
         // Extract and migrate packages configuration
-        let packages = extract_poetry_packages(&old_doc);
+        let packages = crate::utils::pyproject::extract_poetry_packages(&old_doc);
         if !packages.is_empty() {
             file_tracker.track_file(&pyproject_path)?;
             let mut doc = read_toml(&pyproject_path)?;
@@ -171,13 +169,14 @@ pub fn perform_poetry_migration(
         file_tracker.track_file(&pyproject_path)?;
 
         // Get or create a sensible package name
-        let package_name = if let Ok(Some(name)) = pyproject::extract_project_name(project_dir) {
-            name.replace('-', "_").to_lowercase()
-        } else if let Some(dir_name) = project_dir.file_name().and_then(|n| n.to_str()) {
-            dir_name.replace('-', "_").to_lowercase()
-        } else {
-            "app".to_string()
-        };
+        let package_name =
+            if let Ok(Some(name)) = crate::utils::pyproject::extract_project_name(project_dir) {
+                name.replace('-', "_").to_lowercase()
+            } else if let Some(dir_name) = project_dir.file_name().and_then(|n| n.to_str()) {
+                dir_name.replace('-', "_").to_lowercase()
+            } else {
+                "app".to_string()
+            };
 
         // For applications with scripts, use a simpler build backend
         let mut doc = read_toml(&pyproject_path)?;
@@ -265,9 +264,10 @@ pub fn perform_poetry_migration(
             if !git_dependencies.is_empty() {
                 info!("Migrating {} git dependencies", git_dependencies.len());
                 file_tracker.track_file(&pyproject_path)?;
-                pyproject::update_git_dependencies(project_dir, &git_dependencies).map_err(
-                    |e| Error::General(format!("Failed to migrate git dependencies: {}", e)),
-                )?;
+                crate::utils::pyproject::update_git_dependencies(project_dir, &git_dependencies)
+                    .map_err(|e| {
+                        Error::General(format!("Failed to migrate git dependencies: {}", e))
+                    })?;
             }
         }
         Err(e) => {
@@ -290,14 +290,14 @@ pub fn perform_setup_py_migration(
         crate::migrators::setup_py::SetupPyMigrationSource::extract_description(project_dir)?;
     if let Some(desc) = description {
         file_tracker.track_file(&pyproject_path)?;
-        pyproject::update_description(project_dir, &desc)?;
+        crate::utils::pyproject::update_description(project_dir, &desc)?;
     }
 
     info!("Migrating URL from setup.py");
     let project_url = crate::migrators::setup_py::SetupPyMigrationSource::extract_url(project_dir)?;
     if let Some(url) = project_url {
         file_tracker.track_file(&pyproject_path)?;
-        update_url(project_dir, &url)?;
+        crate::utils::pyproject::update_url(project_dir, &url)?;
     }
 
     info!("Migrating authors from setup.py");
@@ -369,6 +369,36 @@ pub fn perform_requirements_migration(
             }
         }
     }
+
+    Ok(())
+}
+
+/// Migrates Conda environment-specific features
+pub fn perform_conda_migration(
+    project_dir: &Path,
+    file_tracker: &mut FileTrackerGuard,
+) -> Result<()> {
+    let pyproject_path = project_dir.join("pyproject.toml");
+
+    info!("Checking for Conda channels to document");
+
+    // Read environment file to check for channels
+    let env_file = project_dir.join("environment.yml");
+    if !env_file.exists() {
+        let env_file = project_dir.join("environment.yaml");
+        if !env_file.exists() {
+            return Ok(());
+        }
+    }
+
+    // Note: We could extract and document Conda channels as comments in pyproject.toml
+    // but UV doesn't have a direct equivalent to Conda channels.
+    // The package name mapping in CondaMigrationSource handles most cases.
+
+    info!("Conda migration completed - package names have been mapped to PyPI equivalents");
+
+    // Track the pyproject.toml file for any additional changes
+    file_tracker.track_file(&pyproject_path)?;
 
     Ok(())
 }

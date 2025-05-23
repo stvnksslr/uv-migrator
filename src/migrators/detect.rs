@@ -1,4 +1,5 @@
 use crate::error::Result;
+use crate::migrators::conda::CondaMigrationSource;
 use crate::migrators::pipenv::PipenvMigrationSource;
 use crate::migrators::poetry::PoetryMigrationSource;
 use crate::models::project::ProjectType;
@@ -6,6 +7,12 @@ use log::info;
 use std::path::Path;
 
 pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType> {
+    // Check for Conda environment first (most specific)
+    if CondaMigrationSource::detect_project_type(project_dir) {
+        info!("Detected Conda project");
+        return Ok(ProjectType::Conda);
+    }
+
     let pyproject_path = project_dir.join("pyproject.toml");
     if pyproject_path.exists() {
         // First, check the project section (Poetry 2.0 style)
@@ -48,7 +55,7 @@ pub fn detect_project_type(project_dir: &Path) -> Result<ProjectType> {
         return Ok(ProjectType::Requirements);
     }
 
-    Err(crate::error::Error::ProjectDetection("Unable to detect project type. Ensure you have either a pyproject.toml with a [tool.poetry] section or a [project] section, a Pipfile, a setup.py file, or requirements.txt file(s).".to_string()))
+    Err(crate::error::Error::ProjectDetection("Unable to detect project type. Ensure you have either a pyproject.toml with a [tool.poetry] section or a [project] section, a Pipfile, a setup.py file, requirements.txt file(s), or an environment.yml file for Conda projects.".to_string()))
 }
 
 /// Parses the contents of a TOML file to check for Poetry configuration.
