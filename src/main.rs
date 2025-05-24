@@ -28,7 +28,7 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     use env_logger::{Builder, Env};
     use log::info;
-    
+
     // Initialize logger with default info level
     Builder::from_env(Env::default().default_filter_or("info"))
         .format_timestamp(None)
@@ -42,7 +42,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run the CLI and get arguments
     let args = cli::run()?;
-    
+
     info!("Migrating project at: {}", args.path.display());
 
     // Run the migration

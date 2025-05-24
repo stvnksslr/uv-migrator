@@ -12,13 +12,13 @@ use pyo3::prelude::*;
 #[pyfunction]
 fn run_cli(py: Python, args: Vec<String>) -> PyResult<()> {
     use std::ffi::OsString;
-    
+
     // Release the GIL while running the CLI
     py.allow_threads(|| {
         // Prepare arguments for the CLI
         let mut cli_args = vec![OsString::from("uv-migrator")];
         cli_args.extend(args.into_iter().map(OsString::from));
-        
+
         // Call the main CLI function with our arguments
         match run_main_with_args(cli_args) {
             Ok(_) => Ok(()),
@@ -41,7 +41,7 @@ fn _uv_migrator(m: &Bound<'_, PyModule>) -> PyResult<()> {
 pub fn run_main_with_args(args: Vec<std::ffi::OsString>) -> crate::error::Result<()> {
     use crate::cli::Args;
     use std::path::PathBuf;
-    
+
     // Parse the arguments manually - this is a basic implementation
     let mut path = PathBuf::from(".");
     let mut merge_groups = false;
@@ -52,7 +52,7 @@ pub fn run_main_with_args(args: Vec<std::ffi::OsString>) -> crate::error::Result
     let mut self_update = false;
     #[cfg(feature = "self_update")]
     let mut check_update = false;
-    
+
     // Simple argument parsing - you might want to make this more sophisticated
     let mut i = 1;
     while i < args.len() {
@@ -79,7 +79,7 @@ pub fn run_main_with_args(args: Vec<std::ffi::OsString>) -> crate::error::Result
         }
         i += 1;
     }
-    
+
     let cli_args = Args {
         path,
         merge_groups,
@@ -91,14 +91,14 @@ pub fn run_main_with_args(args: Vec<std::ffi::OsString>) -> crate::error::Result
         #[cfg(feature = "self_update")]
         check_update,
     };
-    
+
     execute_with_args(&cli_args)
 }
 
 // Expose execute function for library use
 pub fn execute_with_args(args: &cli::Args) -> crate::error::Result<()> {
     use env_logger::{Builder, Env};
-    
+
     // Initialize logger with default info level
     Builder::from_env(Env::default().default_filter_or("info"))
         .format_timestamp(None)
