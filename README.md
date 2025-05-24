@@ -30,14 +30,13 @@ cargo install uv-migrator
 ✅ Pip projects  
 ✅ Multiple requirements files  
 ✅ Auto detect development dependencies and dependency groups  
-✅ Custom package indexes  
+✅ Custom package indexes with named configurations  
 ✅ Pipenv support
 
 Package Formats  
 ✅ setup.py packages  
-✅ poetry packages
+✅ poetry packages  
 ✅ anaconda
-
 
 ## Usage
 
@@ -51,14 +50,14 @@ Arguments:
   [PATH]  The path to the project directory to migrate [default: .]
 
 Options:
-      --merge-groups                 Merge all dependency groups into the dev group
-      --import-global-pip-conf       Import extra index URLs from ~/.pip/pip.conf
-      --import-index <import-index>  Additional index URL to import
-      --disable-restore              Disable automatic file restore on error
-      --self-update                  Update uv-migrator to the latest version
-      --check-update                 Check for updates without installing them
-  -h, --help                         Print help (see more with '--help')
-  -V, --version                      Print version
+      --merge-groups                       Merge all dependency groups into the dev group
+      --import-global-pip-conf             Import extra index URLs from ~/.pip/pip.conf
+      --import-index <import-index>        Additional index URL to import (format: [name@]url)
+      --disable-restore                    Disable automatic file restore on error
+      --self-update                        Update uv-migrator to the latest version
+      --check-update                       Check for updates without installing them
+  -h, --help                               Print help (see more with '--help')
+  -V, --version                            Print version
 
 EXAMPLES:
 # Migrate a project in the current directory
@@ -69,6 +68,10 @@ uv-migrator . --merge-groups
 
 # Migrate a project with a private package index
 uv-migrator . --import-index https://private.pypi.org/simple/
+
+# Migrate with named custom indexes
+uv-migrator . --import-index mycompany@https://pypi.mycompany.com/simple/ \
+             --import-index torch@https://download.pytorch.org/whl/cu118
 
 # Migrate using global pip configuration
 uv-migrator . --import-global-pip-conf
@@ -85,3 +88,34 @@ uv-migrator --self-update
 For more information and documentation, visit:
 https://github.com/stvnksslr/uv-migrator
 ```
+
+## Custom Index Configuration
+
+UV Migrator supports custom package indexes with named configurations. You can specify custom names for your indexes using the `[name@]url` format:
+
+### Named Indexes
+
+```sh
+# Add a named index
+uv-migrator . --import-index mycompany@https://pypi.mycompany.com/simple/
+
+# Add multiple named indexes
+uv-migrator . --import-index torch@https://download.pytorch.org/whl/cu118 \
+             --import-index internal@https://internal.company.com/pypi/
+```
+
+This will generate:
+
+```toml
+[tool.uv]
+index = [
+    { name = "torch", url = "https://download.pytorch.org/whl/cu118" },
+    { name = "internal", url = "https://internal.company.com/pypi/" }
+]
+```
+
+### Index Name Format
+
+- Names can contain letters, numbers, hyphens, and underscores
+- The `@` symbol separates the name from the URL
+- If no name is provided, or the format is invalid, the URL is treated as unnamed

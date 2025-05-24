@@ -494,3 +494,55 @@ version = "0.1.0"
         "Empty black section should be cleaned up"
     );
 }
+
+/// Test update_uv_indices_with_custom_names functionality.
+///
+/// This test verifies that:
+/// 1. Named indexes are correctly parsed from [name@]url format
+/// 2. Unnamed indexes receive auto-generated names (extra-N)
+/// 3. Invalid formats are handled gracefully
+/// 4. The resulting TOML structure is correct
+#[test]
+fn test_update_uv_indices_with_custom_names() {
+    use uv_migrator::utils::pyproject::update_uv_indices_from_urls;
+
+    let temp_dir = TempDir::new().unwrap();
+    let project_dir = temp_dir.path().to_path_buf();
+
+    // Create initial pyproject.toml
+    let content = r#"[project]
+name = "test-project"
+version = "0.1.0"
+"#;
+    fs::write(project_dir.join("pyproject.toml"), content).unwrap();
+
+    // Test with mixed named and unnamed indexes
+    let urls = vec![
+        "mycompany@https://pypi.mycompany.com/simple/".to_string(),
+        "https://pypi.org/simple/".to_string(),
+        "torch@https://download.pytorch.org/whl/cu118".to_string(),
+        "@https://invalid.example.com/".to_string(), // Invalid format, should be treated as URL
+        "name-with-dashes@https://example.com/pypi/".to_string(),
+    ];
+
+    update_uv_indices_from_urls(&project_dir, &urls).unwrap();
+
+    let result = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+
+    // Verify named indexes
+    assert!(result.contains(r#"name = "mycompany""#));
+    assert!(result.contains(r#"url = "https://pypi.mycompany.com/simple/""#));
+
+    assert!(result.contains(r#"name = "torch""#));
+    assert!(result.contains(r#"url = "https://download.pytorch.org/whl/cu118""#));
+
+    assert!(result.contains(r#"name = "name-with-dashes""#));
+    assert!(result.contains(r#"url = "https://example.com/pypi/""#));
+
+    // Verify auto-generated names
+    assert!(result.contains(r#"name = "extra-2""#)); // For the unnamed URL
+    assert!(result.contains(r#"url = "https://pypi.org/simple/""#));
+
+    assert!(result.contains(r#"name = "extra-4""#)); // For the invalid format
+    assert!(result.contains(r#"url = "@https://invalid.example.com/""#));
+}
