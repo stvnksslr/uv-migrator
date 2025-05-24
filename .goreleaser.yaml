@@ -19,13 +19,29 @@ builds:
     id: "uv-migrator"
     binary: uv-migrator
 
+  - builder: uv
+    flags:
+      - --offline
+    id: "uv-migrator-pypi"
+    buildmode: sdist
+    tool: uv
+    command: build
+
+  - builder: uv
+    flags:
+      - --offline
+    id: "uv-migrator-pypi-wheel"
+    buildmode: wheel
+    tool: uv
+    command: build
+
 archives:
-  - formats: [ 'tar.gz' ]
+  - formats: ["tar.gz"]
     files:
       - none*
     name_template: >-
       {{ .ProjectName }}-{{ .Target }}
-    builds:
+    ids:
       - uv-migrator
 
 changelog:

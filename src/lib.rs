@@ -5,6 +5,10 @@ pub mod migrators;
 pub mod models;
 pub mod utils;
 
+// Re-export commonly used types at the root level for backward compatibility
+pub use error::{Error, Result};
+pub use models::dependency::{Dependency, DependencyType};
+
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
