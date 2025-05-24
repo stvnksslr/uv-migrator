@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.8.0](https://github.com/stvnksslr/uv-migrator/compare/v2025.7.1...v2025.8.0) - 2025-05-24
+
+### Added
+- feat([#72](https://github.com/stvnksslr/uv-migrator/pull/72)): adding named indexes functionality (by @stvnksslr)
+- *(conda)* adding conda support (by @stvnksslr)
+
+### Fixed
+- fix([#76](https://github.com/stvnksslr/uv-migrator/pull/76)): didnt have correct logic for hatch conversion (by @stvnksslr)
+- add indexes before installing dependencies ([#73](https://github.com/stvnksslr/uv-migrator/pull/73)) (by @benedikt-bartscher)
+
+### Other
+- *(readme)* changing install url to support additional tools distributed from the same bucket/domain (by @stvnksslr)
+- *(readme)* changing install url to support additional tools distributed from the same bucket/domain (by @stvnksslr)
+- chore(cleaning up comments): (by @stvnksslr)
+
+### Contributors
+
+* @stvnksslr
+* @benedikt-bartscher
 ## [2025.7.1](https://github.com/stvnksslr/uv-migrator/compare/v2025.7.0...v2025.7.1) - 2025-02-27
 
 ### Other
