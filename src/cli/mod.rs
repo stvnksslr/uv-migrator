@@ -1,12 +1,9 @@
 use crate::error::Result;
-use crate::migrators::run_migration;
-use crate::utils::uv::check_uv_requirements;
 use clap::{Arg, ArgAction, Command};
-use log::info;
 use std::path::PathBuf;
 
 /// Command line arguments for UV migrator
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Args {
     /// Path to the project directory
     pub path: PathBuf,
@@ -185,35 +182,5 @@ https://github.com/stvnksslr/uv-migrator";
         check_update: matches.get_flag("check_update"),
     };
 
-    execute(&args)?;
     Ok(args)
-}
-
-/// Execute the migration with the provided arguments
-pub fn execute(args: &Args) -> Result<()> {
-    // If we're only checking for updates or doing a self-update,
-    // we don't need to run the migration
-    #[cfg(feature = "self_update")]
-    if args.self_update || args.check_update {
-        return Ok(());
-    }
-
-    info!("Starting UV migrator...");
-
-    // Check UV requirements before proceeding
-    check_uv_requirements()?;
-
-    info!("Migrating project at: {}", args.path.display());
-
-    // Run the migration
-    run_migration(
-        &args.path,
-        args.import_global_pip_conf,
-        &args.import_index,
-        args.merge_groups,
-        !args.disable_restore,
-    )?;
-
-    info!("Migration completed successfully!");
-    Ok(())
 }
