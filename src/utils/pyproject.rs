@@ -150,13 +150,14 @@ pub fn update_uv_indices_from_urls(project_dir: &Path, urls: &[String]) -> Resul
     let mut doc = read_toml(&pyproject_path)?;
 
     let mut indices = Array::new();
-    for (i, url) in urls.iter().enumerate() {
+    for (i, url_spec) in urls.iter().enumerate() {
         let mut table = InlineTable::new();
-        table.insert(
-            "name",
-            Value::String(Formatted::new(format!("extra-{}", i + 1))),
-        );
-        table.insert("url", Value::String(Formatted::new(url.clone())));
+
+        // Parse [name@]url format
+        let (name, url) = parse_index_spec(url_spec, i + 1);
+
+        table.insert("name", Value::String(Formatted::new(name)));
+        table.insert("url", Value::String(Formatted::new(url)));
         indices.push(Value::InlineTable(table));
     }
 
@@ -169,6 +170,27 @@ pub fn update_uv_indices_from_urls(project_dir: &Path, urls: &[String]) -> Resul
     write_toml(&pyproject_path, &mut doc)?;
     info!("Added {} extra index URLs", urls.len());
     Ok(())
+}
+
+/// Parses an index specification in the format [name@]url
+/// Returns (name, url) where name is either the specified name or "extra-{index}"
+#[doc(hidden)] // Hide from public docs but make available for tests
+pub fn parse_index_spec(spec: &str, index: usize) -> (String, String) {
+    if let Some(at_pos) = spec.find('@') {
+        // Check if @ is not at the beginning
+        if at_pos > 0 {
+            let name = spec[..at_pos].trim().to_string();
+            let url = spec[at_pos + 1..].trim().to_string();
+
+            // Validate that both parts are non-empty
+            if !name.is_empty() && !url.is_empty() {
+                return (name, url);
+            }
+        }
+    }
+
+    // If no valid name@url format found, treat the whole string as URL
+    (format!("extra-{}", index), spec.to_string())
 }
 
 /// Appends tool sections from old pyproject.toml to new one
@@ -389,4 +411,90 @@ pub fn update_url(project_dir: &Path, url: &str) -> Result<()> {
     write_toml(&pyproject_path, &mut doc)?;
     info!("Updated project URL");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_parse_index_spec() {
+        // Test valid name@url format
+        let (name, url) = parse_index_spec("myindex@https://example.com/simple/", 1);
+        assert_eq!(name, "myindex");
+        assert_eq!(url, "https://example.com/simple/");
+
+        // Test URL without name
+        let (name, url) = parse_index_spec("https://example.com/simple/", 5);
+        assert_eq!(name, "extra-5");
+        assert_eq!(url, "https://example.com/simple/");
+
+        // Test with spaces
+        let (name, url) = parse_index_spec("  my-index  @  https://example.com/  ", 1);
+        assert_eq!(name, "my-index");
+        assert_eq!(url, "https://example.com/");
+
+        // Test invalid formats
+        let (name, url) = parse_index_spec("@https://example.com/", 3);
+        assert_eq!(name, "extra-3");
+        assert_eq!(url, "@https://example.com/");
+
+        let (name, url) = parse_index_spec("name@", 4);
+        assert_eq!(name, "extra-4");
+        assert_eq!(url, "name@");
+
+        // Test empty name
+        let (name, url) = parse_index_spec(" @https://example.com/", 2);
+        assert_eq!(name, "extra-2");
+        assert_eq!(url, " @https://example.com/");
+
+        // Test multiple @ symbols
+        let (name, url) = parse_index_spec("my@index@https://example.com/", 1);
+        assert_eq!(name, "my");
+        assert_eq!(url, "index@https://example.com/");
+    }
+
+    #[test]
+    fn test_update_uv_indices_with_custom_names() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path().to_path_buf();
+
+        // Create initial pyproject.toml
+        let content = r#"[project]
+name = "test-project"
+version = "0.1.0"
+"#;
+        fs::write(project_dir.join("pyproject.toml"), content).unwrap();
+
+        // Test with mixed named and unnamed indexes
+        let urls = vec![
+            "mycompany@https://pypi.mycompany.com/simple/".to_string(),
+            "https://pypi.org/simple/".to_string(),
+            "torch@https://download.pytorch.org/whl/cu118".to_string(),
+            "@https://invalid.example.com/".to_string(), // Invalid format, should be treated as URL
+            "name-with-dashes@https://example.com/pypi/".to_string(),
+        ];
+
+        update_uv_indices_from_urls(&project_dir, &urls).unwrap();
+
+        let result = fs::read_to_string(project_dir.join("pyproject.toml")).unwrap();
+
+        // Verify named indexes
+        assert!(result.contains(r#"name = "mycompany""#));
+        assert!(result.contains(r#"url = "https://pypi.mycompany.com/simple/""#));
+
+        assert!(result.contains(r#"name = "torch""#));
+        assert!(result.contains(r#"url = "https://download.pytorch.org/whl/cu118""#));
+
+        assert!(result.contains(r#"name = "name-with-dashes""#));
+        assert!(result.contains(r#"url = "https://example.com/pypi/""#));
+
+        // Verify auto-generated names
+        assert!(result.contains(r#"name = "extra-2""#)); // For the unnamed URL
+        assert!(result.contains(r#"url = "https://pypi.org/simple/""#));
+
+        assert!(result.contains(r#"name = "extra-4""#)); // For the invalid format
+        assert!(result.contains(r#"url = "@https://invalid.example.com/""#));
+    }
 }

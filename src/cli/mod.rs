@@ -82,11 +82,14 @@ pub fn run() -> Result<Args> {
     cmd = cmd.arg(
         Arg::new("import-index")
             .long("import-index")
-            .help("Additional index URL to import")
+            .help("Additional index URL to import (format: [name@]url)")
             .long_help(
                 "Specifies additional Python package index URLs to use. You can provide this \
                 option multiple times to add several index URLs. These URLs will be added to \
-                your project's pyproject.toml in the [tool.uv] section.",
+                your project's pyproject.toml in the [tool.uv] section.\n\n\
+                Format: [name@]url\n\
+                - name@https://pypi.example.com/simple/ - adds index with name 'name'\n\
+                - https://pypi.example.com/simple/ - adds index with auto-generated name 'extra-N'",
             )
             .action(ArgAction::Append)
             .value_parser(clap::value_parser!(String)),
@@ -139,6 +142,10 @@ uv-migrator . --merge-groups
 
 # Migrate a project with a private package index
 uv-migrator . --import-index https://private.pypi.org/simple/
+
+# Migrate with named custom indexes
+uv-migrator . --import-index mycompany@https://pypi.mycompany.com/simple/ \\
+             --import-index torch@https://download.pytorch.org/whl/cu118
 
 # Migrate using global pip configuration
 uv-migrator . --import-global-pip-conf
