@@ -68,7 +68,7 @@ dependencies:
 
     // Check numpy
     let numpy_dep = dependencies.iter().find(|d| d.name == "numpy").unwrap();
-    assert_eq!(numpy_dep.version, Some("1.21.5".to_string()));
+    assert_eq!(numpy_dep.version, Some("==1.21.5".to_string()));
     assert_eq!(numpy_dep.dep_type, DependencyType::Main);
 
     // Check pandas
@@ -162,6 +162,9 @@ dependencies:
   - tensorflow-gpu
   - py-opencv
   - pillow-simd
+  - ruamel_yaml
+  - importlib_metadata
+  - prompt_toolkit
 "#;
 
     let (_temp_dir, project_dir) = create_test_environment(content);
@@ -183,6 +186,18 @@ dependencies:
     // Check pillow-simd -> pillow
     assert!(dependencies.iter().any(|d| d.name == "pillow"));
     assert!(!dependencies.iter().any(|d| d.name == "pillow-simd"));
+
+    // Check ruamel_yaml -> ruamel.yaml
+    assert!(dependencies.iter().any(|d| d.name == "ruamel.yaml"));
+    assert!(!dependencies.iter().any(|d| d.name == "ruamel_yaml"));
+
+    // Check importlib_metadata -> importlib-metadata
+    assert!(dependencies.iter().any(|d| d.name == "importlib-metadata"));
+    assert!(!dependencies.iter().any(|d| d.name == "importlib_metadata"));
+
+    // Check prompt_toolkit -> prompt-toolkit
+    assert!(dependencies.iter().any(|d| d.name == "prompt-toolkit"));
+    assert!(!dependencies.iter().any(|d| d.name == "prompt_toolkit"));
 }
 
 /// Test that system packages are skipped
@@ -208,6 +223,70 @@ dependencies:
     // Should only have numpy
     assert_eq!(dependencies.len(), 1);
     assert_eq!(dependencies[0].name, "numpy");
+}
+
+/// Test that packages starting with underscore are skipped
+#[test]
+fn test_skip_underscore_packages() {
+    let content = r#"
+name: test-env
+dependencies:
+  - python=3.9
+  - numpy
+  - _libgcc_mutex
+  - _openmp_mutex
+  - _pytorch_select
+  - _low_priority
+  - pandas
+"#;
+
+    let (_temp_dir, project_dir) = create_test_environment(content);
+    let source = CondaMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    // Should only have numpy and pandas (not the underscore packages)
+    assert_eq!(dependencies.len(), 2);
+    assert!(dependencies.iter().any(|d| d.name == "numpy"));
+    assert!(dependencies.iter().any(|d| d.name == "pandas"));
+
+    // Verify no underscore packages were included
+    assert!(!dependencies.iter().any(|d| d.name.starts_with('_')));
+}
+
+/// Test that conda-specific packages are skipped
+#[test]
+fn test_skip_conda_specific_packages() {
+    let content = r#"
+name: test-env
+dependencies:
+  - python=3.9
+  - numpy
+  - anaconda=2020.07
+  - anaconda-client
+  - anaconda-navigator
+  - navigator-updater
+  - dask-core
+  - matplotlib-base
+  - numpy-base
+  - backports=1.0
+  - pandas
+"#;
+
+    let (_temp_dir, project_dir) = create_test_environment(content);
+    let source = CondaMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    // Should only have numpy and pandas
+    assert_eq!(dependencies.len(), 2);
+    assert!(dependencies.iter().any(|d| d.name == "numpy"));
+    assert!(dependencies.iter().any(|d| d.name == "pandas"));
+
+    // Verify conda-specific packages were not included
+    assert!(!dependencies.iter().any(|d| d.name == "anaconda"));
+    assert!(!dependencies.iter().any(|d| d.name == "anaconda-client"));
+    assert!(!dependencies.iter().any(|d| d.name == "dask-core"));
+    assert!(!dependencies.iter().any(|d| d.name == "matplotlib-base"));
+    assert!(!dependencies.iter().any(|d| d.name == "backports"));
 }
 
 /// Test extraction of Python version from environment
@@ -289,4 +368,98 @@ channels:
     let dependencies = source.extract_dependencies(&project_dir).unwrap();
 
     assert!(dependencies.is_empty());
+}
+
+/// Test handling of packages with dots in their names
+#[test]
+fn test_packages_with_dots() {
+    let content = r#"
+name: test-env
+dependencies:
+  - backports.functools_lru_cache=1.6.1
+  - backports.shutil_get_terminal_size=1.0.0
+  - zope.event=4.4
+  - zope.interface=4.7.1
+"#;
+
+    let (_temp_dir, project_dir) = create_test_environment(content);
+    let source = CondaMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    assert_eq!(dependencies.len(), 4);
+
+    // Check backports.functools_lru_cache
+    let backports_dep = dependencies
+        .iter()
+        .find(|d| d.name == "backports.functools_lru_cache")
+        .unwrap();
+    assert_eq!(backports_dep.version, Some("==1.6.1".to_string()));
+
+    // Check zope.event
+    let zope_event_dep = dependencies
+        .iter()
+        .find(|d| d.name == "zope.event")
+        .unwrap();
+    assert_eq!(zope_event_dep.version, Some("==4.4".to_string()));
+}
+
+/// Test that backports namespace is skipped but individual backports packages are kept
+#[test]
+fn test_backports_namespace_handling() {
+    let content = r#"
+name: test-env
+dependencies:
+  - backports=1.0
+  - backports.functools_lru_cache=1.6.1
+  - backports.shutil_get_terminal_size=1.0.0
+  - backports.tempfile=1.0
+  - backports.weakref=1.0.post1
+"#;
+
+    let (_temp_dir, project_dir) = create_test_environment(content);
+    let source = CondaMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    // Should have 4 dependencies (all backports.* except the namespace package)
+    assert_eq!(dependencies.len(), 4);
+
+    // Verify backports namespace package was skipped
+    assert!(!dependencies.iter().any(|d| d.name == "backports"));
+
+    // Verify individual backports packages were included
+    assert!(
+        dependencies
+            .iter()
+            .any(|d| d.name == "backports.functools_lru_cache")
+    );
+    assert!(
+        dependencies
+            .iter()
+            .any(|d| d.name == "backports.shutil_get_terminal_size")
+    );
+    assert!(dependencies.iter().any(|d| d.name == "backports.tempfile"));
+    assert!(dependencies.iter().any(|d| d.name == "backports.weakref"));
+}
+
+/// Test that problematic package versions are updated
+#[test]
+fn test_problematic_version_updates() {
+    let content = r#"
+name: test-env
+dependencies:
+  - bokeh=2.1.1
+  - numpy=1.18.5
+"#;
+
+    let (_temp_dir, project_dir) = create_test_environment(content);
+    let source = CondaMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    // Check that bokeh version was updated
+    let bokeh_dep = dependencies.iter().find(|d| d.name == "bokeh").unwrap();
+    assert_eq!(bokeh_dep.version, Some("==2.4.3".to_string()));
+
+    // Check that numpy version was not changed
+    let numpy_dep = dependencies.iter().find(|d| d.name == "numpy").unwrap();
+    assert_eq!(numpy_dep.version, Some("==1.18.5".to_string()));
 }

@@ -131,11 +131,7 @@ impl MigrationTool for UvTool {
         let using_bare_flag = uv_version >= version_supports_bare;
 
         // Add common arguments to reduce number of files created
-        builder = builder
-            .arg("--no-pin-python")
-            .arg("--vcs")
-            .arg("none")
-            .arg("--no-readme");
+        builder = builder.arg("--vcs").arg("none").arg("--no-readme");
 
         // Add --bare flag if UV version supports it
         if using_bare_flag {

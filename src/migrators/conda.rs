@@ -81,7 +81,8 @@ impl CondaMigrationSource {
     /// Parses a Conda dependency string into name and version
     fn parse_conda_dependency(&self, dep_str: &str) -> (String, Option<String>) {
         // First try to match comparison operators (including compound ones like >=, <=, !=)
-        let re = regex::Regex::new(r"^([a-zA-Z0-9\-_]+)\s*([><=!]+)\s*(.+)$").unwrap();
+        // Package names can contain letters, numbers, hyphens, underscores, and dots
+        let re = regex::Regex::new(r"^([a-zA-Z0-9\-_.]+)\s*([><=!]+)\s*(.+)$").unwrap();
         if let Some(captures) = re.captures(dep_str) {
             let name = captures.get(1).map(|m| m.as_str()).unwrap_or(dep_str);
             let op = captures.get(2).map(|m| m.as_str()).unwrap_or("");
@@ -90,11 +91,11 @@ impl CondaMigrationSource {
             // Handle special operators
             match op {
                 "=" => {
-                    // Single = in conda means exact version
+                    // Single = in conda means exact version (== in pip)
                     let pip_version = if version.contains('*') {
                         self.convert_wildcard_version(version)
                     } else {
-                        Some(version.to_string())
+                        Some(format!("=={}", version))
                     };
                     (name.to_string(), pip_version)
                 }
@@ -147,6 +148,11 @@ impl CondaMigrationSource {
 
     /// Checks if a package should be skipped (non-Python packages)
     fn should_skip_package(&self, name: &str) -> bool {
+        // Skip packages that start with underscore - these are typically conda-specific internal packages
+        if name.starts_with('_') {
+            return true;
+        }
+
         // Skip common system packages and non-Python dependencies
         const SKIP_PACKAGES: &[&str] = &[
             "python",
@@ -154,12 +160,64 @@ impl CondaMigrationSource {
             "setuptools",
             "wheel",
             // Common Conda-specific packages that aren't on PyPI
+            "anaconda",
+            "anaconda-client",
+            "anaconda-navigator",
+            "anaconda-project",
+            "navigator-updater",
             "conda",
             "conda-build",
             "conda-env",
             "conda-pack",
             "conda-verify",
+            "conda-package-handling",
+            "clyent",
+            "console_shortcut",
+            "dask-core",
+            "get_terminal_size",
+            "matplotlib-base",
+            "numpy-base",
+            "path.py",
+            "py-lief",
+            "singledispatch",
+            "blosc",
+            "bkcharts",
+            "tbb",
+            "zope",
+            "backports", // This is just a namespace package
             // System libraries often installed via Conda
+            "bzip2",
+            "curl",
+            "freetype",
+            "get_terminal_size",
+            "hdf5",
+            "icu",
+            "jpeg",
+            "krb5",
+            "libarchive",
+            "libcurl",
+            "libiconv",
+            "liblief",
+            "libllvm9",
+            "libpng",
+            "libsodium",
+            "libspatialindex",
+            "libssh2",
+            "libtiff",
+            "libxml2",
+            "libxslt",
+            "lz4-c",
+            "lzo",
+            "mpc",
+            "mpfr",
+            "mpir",
+            "pandoc",
+            "qt",
+            "sip",
+            "snappy",
+            "yaml",
+            "zeromq",
+            "zstd",
             "libgcc-ng",
             "libstdcxx-ng",
             "libffi",
@@ -228,9 +286,36 @@ impl CondaMigrationSource {
             "lxml" => "lxml",
             "pytables" => "tables",
             "tensorflow-mkl" => "tensorflow",
+            "ruamel_yaml" => "ruamel.yaml",
+            "importlib_metadata" => "importlib-metadata",
+            "prompt_toolkit" => "prompt-toolkit",
             _ => conda_name,
         }
         .to_string()
+    }
+
+    /// Updates old package versions that are known to have compatibility issues
+    fn update_problematic_versions(&self, name: &str, version: Option<String>) -> Option<String> {
+        // For packages with known build issues on newer Python versions,
+        // suggest updated versions that maintain compatibility
+        match name {
+            "bokeh" => {
+                if let Some(v) = &version {
+                    // bokeh 2.1.1 has issues with Python 3.12+
+                    if v == "==2.1.1" {
+                        // Update to a version that works with newer Python
+                        // but is still from a similar era for compatibility
+                        info!(
+                            "Updating bokeh from {} to ==2.4.3 for Python compatibility",
+                            v
+                        );
+                        return Some("==2.4.3".to_string());
+                    }
+                }
+                version
+            }
+            _ => version,
+        }
     }
 
     /// Extracts Python version requirement from dependencies
@@ -241,12 +326,14 @@ impl CondaMigrationSource {
                     let (name, version) = self.parse_conda_dependency(s);
                     if name == "python" {
                         return version.map(|v| {
+                            // Strip version operator prefix if present
+                            let version_str = v.strip_prefix("==").unwrap_or(&v);
                             // Extract major.minor version
-                            let parts: Vec<&str> = v.split('.').collect();
+                            let parts: Vec<&str> = version_str.split('.').collect();
                             if parts.len() >= 2 {
                                 format!("{}.{}", parts[0], parts[1])
                             } else {
-                                v
+                                version_str.to_string()
                             }
                         });
                     }
@@ -295,7 +382,7 @@ impl CondaMigrationSource {
     /// Parse pip dependency string with potential extras
     fn parse_pip_dependency(&self, dep_str: &str) -> (String, Option<String>, Option<Vec<String>>) {
         // Handle dependencies with extras like "package[extra1,extra2]>=1.0.0"
-        let extras_regex = regex::Regex::new(r"^([a-zA-Z0-9\-_]+)\[([^\]]+)\](.*)$").unwrap();
+        let extras_regex = regex::Regex::new(r"^([a-zA-Z0-9\-_]+)\[([^\]]+)](.*)$").unwrap();
 
         if let Some(captures) = extras_regex.captures(dep_str) {
             let name = captures.get(1).map(|m| m.as_str()).unwrap_or(dep_str);
@@ -373,9 +460,12 @@ impl MigrationSource for CondaMigrationSource {
                         // Map Conda package name to PyPI equivalent
                         let pypi_name = self.map_conda_to_pypi_name(&name);
 
+                        // Update problematic versions
+                        let updated_version = self.update_problematic_versions(&pypi_name, version);
+
                         dependencies.push(Dependency {
                             name: pypi_name,
-                            version,
+                            version: updated_version,
                             dep_type: DependencyType::Main,
                             environment_markers: None,
                             extras: None,
@@ -447,7 +537,7 @@ mod tests {
         // Test versioned package
         assert_eq!(
             source.parse_conda_dependency("pandas=1.3.0"),
-            ("pandas".to_string(), Some("1.3.0".to_string()))
+            ("pandas".to_string(), Some("==1.3.0".to_string()))
         );
 
         // Test package with comparison
