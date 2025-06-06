@@ -12,7 +12,7 @@ applications that consume packages, stay tuned for support for migrating package
 
 ## Installation
 
-easy install script, source located at [install.sh](https://github.com/stvnksslr/uv-migrator/blob/main/uv-migrator/install.sh)
+easy install script, source located at [install.sh](https://github.com/stvnksslr/uv-migrator/blob/main/install.sh)
 
 ```sh
 curl https://files.stvnksslr.com/uv-migrator/install.sh | bash
