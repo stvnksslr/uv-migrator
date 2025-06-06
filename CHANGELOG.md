@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.8.1](https://github.com/stvnksslr/uv-migrator/compare/v2025.8.0...v2025.8.1) - 2025-06-06
+
+### Fixed
+- fix(misc conda issues):
+
+### Other
+- chore(fixing install script source):
 ## [2025.8.0](https://github.com/stvnksslr/uv-migrator/compare/v2025.7.1...v2025.8.0) - 2025-05-24
 
 ### Added
