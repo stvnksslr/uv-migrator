@@ -873,6 +873,49 @@ name = "test-project"
     assert!(result.is_err());
 }
 
+#[test]
+fn test_extract_python_version_complex_constraint() {
+    // Test the specific case that was causing issues: "^3.9, <3.12"
+    let content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = "^3.9, <3.12"
+"#;
+    let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
+    let version = PoetryMigrationSource::extract_python_version(&project_dir).unwrap();
+    // The current implementation should extract "3.9" from "^3.9, <3.12"
+    // but there might be a bug causing it to return "3" instead
+    println!("Extracted version from '^3.9, <3.12': {:?}", version);
+    assert_eq!(version, Some("3.9".to_string()));
+}
+
+#[test]
+fn test_extract_python_version_complex_constraint_tilde() {
+    // Test complex constraint with tilde operator: "~=3.8.0, <3.11"
+    let content = r#"
+[tool.poetry.dependencies]
+python = "~=3.8.0, <3.11"
+"#;
+    let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
+    let version = PoetryMigrationSource::extract_python_version(&project_dir).unwrap();
+    assert_eq!(version, Some("3.8".to_string()));
+}
+
+#[test]
+fn test_extract_python_version_complex_constraint_greater_equal() {
+    // Test complex constraint with >= operator: ">=3.10.0, <3.13"
+    let content = r#"
+[tool.poetry.dependencies]
+python = ">=3.10.0, <3.13"
+"#;
+    let (_temp_dir, project_dir) = create_test_project_with_old_pyproject(content);
+    let version = PoetryMigrationSource::extract_python_version(&project_dir).unwrap();
+    assert_eq!(version, Some("3.10".to_string()));
+}
+
 use crate::tests::setup_test_dir;
 
 #[test]
