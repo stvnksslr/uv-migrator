@@ -165,9 +165,9 @@ impl PoetryMigrationSource {
                 let version = if let Some(stripped) = python_dep.strip_prefix(">=") {
                     stripped.split(',').next().unwrap_or(stripped)
                 } else if let Some(stripped) = python_dep.strip_prefix("^") {
-                    stripped
+                    stripped.split(',').next().unwrap_or(stripped)
                 } else if let Some(stripped) = python_dep.strip_prefix("~=") {
-                    stripped
+                    stripped.split(',').next().unwrap_or(stripped)
                 } else {
                     python_dep.split(&[',', ' ']).next().unwrap_or(python_dep)
                 };
@@ -198,9 +198,9 @@ impl PoetryMigrationSource {
                         let version = if let Some(stripped) = version_str.strip_prefix(">=") {
                             stripped.split(',').next().unwrap_or(stripped)
                         } else if let Some(stripped) = version_str.strip_prefix("^") {
-                            stripped
+                            stripped.split(',').next().unwrap_or(stripped)
                         } else if let Some(stripped) = version_str.strip_prefix("~=") {
-                            stripped
+                            stripped.split(',').next().unwrap_or(stripped)
                         } else {
                             version_str
                                 .split(&[',', ' '])
