@@ -33,7 +33,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.87.0
+          toolchain: 1.89.0
 
       - name: Run release-plz
         uses: MarcoIeni/release-plz-action@v0.5
