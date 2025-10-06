@@ -89,6 +89,8 @@ fn is_empty_section(item: &Item) -> bool {
 }
 
 /// Defines the expected order of fields within the [project] section
+/// Note: optional-dependencies is kept for backward compatibility with older projects.
+/// Modern UV projects (0.4.27+) use [dependency-groups] as a top-level section instead.
 const PROJECT_FIELD_ORDER: &[&str] = &[
     "name",
     "version",
@@ -157,33 +159,46 @@ pub fn reorder_toml_sections(project_dir: &Path) -> Result<(), String> {
         }
     }
 
-    // Clear the document
-    let keys_to_remove: Vec<String> = doc.as_table().iter().map(|(k, _)| k.to_string()).collect();
-    for key in keys_to_remove {
-        doc.remove(&key);
-    }
-
-    // Write back sections in the desired order
-    let section_order = ["project", "build-system"];
+    // Build a new document string with sections in the desired order
+    // Note: dependency-groups is a PEP 735 top-level section (supported in UV 0.4.27+)
+    let mut output = String::new();
+    let section_order = ["project", "dependency-groups", "build-system"];
 
     // First, add ordered known sections
     for &section_name in section_order.iter() {
         if let Some((_, item)) = sections.iter().find(|(key, _)| key == section_name) {
-            doc.insert(section_name, item.clone());
+            output.push_str(&format!("[{}]\n", section_name));
+            if let Item::Table(table) = item {
+                output.push_str(&table.to_string());
+            }
+            output.push('\n');
         }
     }
 
     // Then add any remaining non-tool sections that weren't in the order list
     for (key, item) in sections.iter() {
         if !section_order.contains(&key.as_str()) {
-            doc.insert(key, item.clone());
+            output.push_str(&format!("[{}]\n", key));
+            if let Item::Table(table) = item {
+                output.push_str(&table.to_string());
+            }
+            output.push('\n');
         }
     }
 
     // Finally add tool sections
     for (key, item) in tool_sections {
-        doc.insert(&key, item);
+        output.push_str(&format!("[{}]\n", key));
+        if let Item::Table(table) = item {
+            output.push_str(&table.to_string());
+        }
+        output.push('\n');
     }
+
+    // Parse the output back into a document to ensure it's valid TOML
+    doc = output
+        .parse::<DocumentMut>()
+        .map_err(|e| format!("Failed to parse reordered TOML: {}", e))?;
 
     // Write the reordered content back to the file
     fs::write(&pyproject_path, doc.to_string())
@@ -233,6 +248,43 @@ description = "Test description"
         assert!(
             authors_pos < dependencies_pos,
             "authors should come before dependencies"
+        );
+    }
+
+    #[test]
+    fn test_dependency_groups_section_ordering() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_content = r#"[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["pytest>=8.0.0"]
+lint = ["ruff>=0.1.0"]
+
+[project]
+name = "test-project"
+version = "1.0.0"
+dependencies = []
+"#;
+        fs::write(temp_dir.path().join("pyproject.toml"), input_content).unwrap();
+
+        reorder_toml_sections(temp_dir.path()).unwrap();
+
+        let result = fs::read_to_string(temp_dir.path().join("pyproject.toml")).unwrap();
+
+        // Verify section order: project -> dependency-groups -> build-system
+        let project_pos = result.find("[project]").unwrap();
+        let dep_groups_pos = result.find("[dependency-groups]").unwrap();
+        let build_system_pos = result.find("[build-system]").unwrap();
+
+        assert!(
+            project_pos < dep_groups_pos,
+            "project should come before dependency-groups"
+        );
+        assert!(
+            dep_groups_pos < build_system_pos,
+            "dependency-groups should come before build-system"
         );
     }
 }
