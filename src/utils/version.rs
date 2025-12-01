@@ -109,10 +109,12 @@ fn extract_version_from_init_py(project_dir: &Path) -> Result<Option<String>, St
     {
         let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
         let path = entry.path();
+        // Using map_or instead of is_none_or for stable Rust compatibility
+        #[allow(clippy::unnecessary_map_or)]
         if path.is_dir()
             && !path
                 .file_name()
-                .is_none_or(|n| n.to_string_lossy().starts_with('.'))
+                .map_or(true, |n| n.to_string_lossy().starts_with('.'))
         {
             let init_path = path.join("__init__.py");
             if let Some(version) = extract_version_from_init_file(&init_path)? {

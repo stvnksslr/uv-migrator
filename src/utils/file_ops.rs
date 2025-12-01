@@ -168,20 +168,34 @@ impl FileTracker {
                     FileChange::Renamed { source_path } => {
                         if path.exists() {
                             if source_path.exists() {
-                                // Both files exist, need to move content
+                                // Both files exist - this typically happens when:
+                                // 1. Original file was renamed to backup (path)
+                                // 2. Migration created new file at original location (source_path)
+                                // 3. Rollback needs to restore original content
+                                //
+                                // We restore by copying content from backup to original, then removing backup.
+                                debug!(
+                                    "Both '{}' and '{}' exist during rollback. \
+                                     Restoring original content from backup.",
+                                    source_path.display(),
+                                    path.display()
+                                );
                                 let content = fs::read(path).map_err(|e| Error::FileOperation {
                                     path: path.to_path_buf(),
-                                    message: format!("Failed to read renamed file: {}", e),
+                                    message: format!(
+                                        "Failed to read backup file for rollback: {}",
+                                        e
+                                    ),
                                 })?;
                                 fs::write(source_path, content).map_err(|e| {
                                     Error::FileOperation {
                                         path: source_path.to_path_buf(),
-                                        message: format!("Failed to restore renamed file: {}", e),
+                                        message: format!("Failed to restore original file: {}", e),
                                     }
                                 })?;
                                 fs::remove_file(path).map_err(|e| Error::FileOperation {
                                     path: path.to_path_buf(),
-                                    message: format!("Failed to remove renamed file: {}", e),
+                                    message: format!("Failed to remove backup file: {}", e),
                                 })?;
                             } else {
                                 // Simple rename back
