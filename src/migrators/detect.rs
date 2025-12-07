@@ -110,24 +110,260 @@ fn has_poetry_section(pyproject_path: &Path) -> Result<bool> {
 /// # Returns
 ///
 /// A Vec<PathBuf> containing paths to all found requirements files.
+/// Returns an empty Vec if the directory cannot be read.
 fn find_requirements_files(dir: &Path) -> Vec<std::path::PathBuf> {
-    std::fs::read_dir(dir)
-        .unwrap()
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            log::debug!("Could not read directory {}: {}", dir.display(), e);
+            return Vec::new();
+        }
+    };
+
+    entries
         .filter_map(|entry| {
-            let entry = entry.unwrap();
+            let entry = entry.ok()?;
             let path = entry.path();
-            if path.is_file()
-                && path
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .starts_with("requirements")
-            {
-                Some(path)
-            } else {
-                None
+            if path.is_file() {
+                let file_name = path.file_name()?.to_str()?;
+                if file_name.starts_with("requirements") {
+                    return Some(path);
+                }
             }
+            None
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn create_temp_dir() -> TempDir {
+        TempDir::new().expect("Failed to create temp directory")
+    }
+
+    #[test]
+    fn test_detect_poetry_project() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        let pyproject_content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+requests = "^2.28.0"
+"#;
+        fs::write(project_dir.join("pyproject.toml"), pyproject_content).unwrap();
+
+        let result = detect_project_type(project_dir);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), ProjectType::Poetry(_)));
+    }
+
+    #[test]
+    fn test_detect_poetry2_project() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        let pyproject_content = r#"
+[project]
+name = "test-project"
+version = "0.1.0"
+dependencies = ["requests>=2.28.0"]
+"#;
+        fs::write(project_dir.join("pyproject.toml"), pyproject_content).unwrap();
+
+        let result = detect_project_type(project_dir);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), ProjectType::Poetry(_)));
+    }
+
+    #[test]
+    fn test_detect_pipenv_project() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        let pipfile_content = r#"
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+requests = "*"
+
+[dev-packages]
+pytest = "*"
+"#;
+        fs::write(project_dir.join("Pipfile"), pipfile_content).unwrap();
+        fs::write(project_dir.join("Pipfile.lock"), "{}").unwrap();
+
+        let result = detect_project_type(project_dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ProjectType::Pipenv);
+    }
+
+    #[test]
+    fn test_detect_setup_py_project() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        let setup_py_content = r#"
+from setuptools import setup
+
+setup(
+    name="test-project",
+    version="0.1.0",
+    install_requires=["requests>=2.28.0"],
+)
+"#;
+        fs::write(project_dir.join("setup.py"), setup_py_content).unwrap();
+
+        let result = detect_project_type(project_dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ProjectType::SetupPy);
+    }
+
+    #[test]
+    fn test_detect_requirements_project() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        fs::write(project_dir.join("requirements.txt"), "requests>=2.28.0\n").unwrap();
+
+        let result = detect_project_type(project_dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ProjectType::Requirements);
+    }
+
+    #[test]
+    fn test_detect_requirements_dev_project() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        fs::write(project_dir.join("requirements-dev.txt"), "pytest>=7.0.0\n").unwrap();
+
+        let result = detect_project_type(project_dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ProjectType::Requirements);
+    }
+
+    #[test]
+    fn test_detect_conda_project() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        let env_content = r#"
+name: test-env
+dependencies:
+  - python=3.9
+  - numpy
+"#;
+        fs::write(project_dir.join("environment.yml"), env_content).unwrap();
+
+        let result = detect_project_type(project_dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ProjectType::Conda);
+    }
+
+    #[test]
+    fn test_detect_fails_with_no_config() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        // Empty directory
+        let result = detect_project_type(project_dir);
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert!(matches!(error, crate::error::Error::ProjectDetection(_)));
+    }
+
+    #[test]
+    fn test_detect_priority_conda_over_poetry() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        // Create both Conda and Poetry configs
+        let env_content = r#"
+name: test-env
+dependencies:
+  - python=3.9
+"#;
+        fs::write(project_dir.join("environment.yml"), env_content).unwrap();
+
+        let pyproject_content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+"#;
+        fs::write(project_dir.join("pyproject.toml"), pyproject_content).unwrap();
+
+        // Conda should take priority
+        let result = detect_project_type(project_dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ProjectType::Conda);
+    }
+
+    #[test]
+    fn test_detect_priority_poetry_over_pipenv() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        // Create both Poetry and Pipenv configs
+        let pyproject_content = r#"
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+"#;
+        fs::write(project_dir.join("pyproject.toml"), pyproject_content).unwrap();
+
+        let pipfile_content = r#"
+[packages]
+requests = "*"
+"#;
+        fs::write(project_dir.join("Pipfile"), pipfile_content).unwrap();
+        fs::write(project_dir.join("Pipfile.lock"), "{}").unwrap();
+
+        // Poetry should take priority
+        let result = detect_project_type(project_dir);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), ProjectType::Poetry(_)));
+    }
+
+    #[test]
+    fn test_find_requirements_files() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        fs::write(project_dir.join("requirements.txt"), "").unwrap();
+        fs::write(project_dir.join("requirements-dev.txt"), "").unwrap();
+        fs::write(project_dir.join("requirements_test.txt"), "").unwrap();
+        fs::write(project_dir.join("other.txt"), "").unwrap();
+
+        let files = find_requirements_files(project_dir);
+        assert_eq!(files.len(), 3);
+    }
+
+    #[test]
+    fn test_find_requirements_files_empty_dir() {
+        let temp_dir = create_temp_dir();
+        let project_dir = temp_dir.path();
+
+        let files = find_requirements_files(project_dir);
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_find_requirements_files_nonexistent_dir() {
+        let nonexistent = Path::new("/nonexistent/path/that/does/not/exist");
+        let files = find_requirements_files(nonexistent);
+        assert!(files.is_empty()); // Should not panic, returns empty vec
+    }
 }

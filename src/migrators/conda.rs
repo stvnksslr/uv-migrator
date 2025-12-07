@@ -2,10 +2,25 @@ use crate::error::{Error, Result};
 use crate::migrators::MigrationSource;
 use crate::models::dependency::{Dependency, DependencyType};
 use log::{debug, info, warn};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
+
+// Pre-compiled regexes for performance - compiled once at first use
+static CONDA_DEP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^([a-zA-Z0-9\-_.]+)\s*([><=!]+)\s*(.+)$").expect("Invalid CONDA_DEP_REGEX pattern")
+});
+
+static PIP_EXTRAS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^([a-zA-Z0-9\-_]+)\[([^\]]+)](.*)$").expect("Invalid PIP_EXTRAS_REGEX pattern")
+});
+
+static PIP_VERSION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^([a-zA-Z0-9\-_]+)(.*)$").expect("Invalid PIP_VERSION_REGEX pattern")
+});
 
 /// Represents a Conda environment.yml file structure
 #[derive(Debug, Deserialize, Serialize)]
@@ -82,8 +97,7 @@ impl CondaMigrationSource {
     fn parse_conda_dependency(&self, dep_str: &str) -> (String, Option<String>) {
         // First try to match comparison operators (including compound ones like >=, <=, !=)
         // Package names can contain letters, numbers, hyphens, underscores, and dots
-        let re = regex::Regex::new(r"^([a-zA-Z0-9\-_.]+)\s*([><=!]+)\s*(.+)$").unwrap();
-        if let Some(captures) = re.captures(dep_str) {
+        if let Some(captures) = CONDA_DEP_REGEX.captures(dep_str) {
             let name = captures.get(1).map(|m| m.as_str()).unwrap_or(dep_str);
             let op = captures.get(2).map(|m| m.as_str()).unwrap_or("");
             let version = captures.get(3).map(|m| m.as_str()).unwrap_or("");
@@ -382,9 +396,7 @@ impl CondaMigrationSource {
     /// Parse pip dependency string with potential extras
     fn parse_pip_dependency(&self, dep_str: &str) -> (String, Option<String>, Option<Vec<String>>) {
         // Handle dependencies with extras like "package[extra1,extra2]>=1.0.0"
-        let extras_regex = regex::Regex::new(r"^([a-zA-Z0-9\-_]+)\[([^\]]+)](.*)$").unwrap();
-
-        if let Some(captures) = extras_regex.captures(dep_str) {
+        if let Some(captures) = PIP_EXTRAS_REGEX.captures(dep_str) {
             let name = captures.get(1).map(|m| m.as_str()).unwrap_or(dep_str);
             let extras_str = captures.get(2).map(|m| m.as_str()).unwrap_or("");
             let version_part = captures.get(3).map(|m| m.as_str()).unwrap_or("");
@@ -404,9 +416,7 @@ impl CondaMigrationSource {
             (name.to_string(), version, Some(extras))
         } else {
             // No extras, parse normally
-            let version_regex = regex::Regex::new(r"^([a-zA-Z0-9\-_]+)(.*)$").unwrap();
-
-            if let Some(captures) = version_regex.captures(dep_str) {
+            if let Some(captures) = PIP_VERSION_REGEX.captures(dep_str) {
                 let name = captures.get(1).map(|m| m.as_str()).unwrap_or(dep_str);
                 let version_part = captures.get(2).map(|m| m.as_str()).unwrap_or("");
 

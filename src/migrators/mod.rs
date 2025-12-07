@@ -52,6 +52,13 @@ impl MigrationTool for UvTool {
 
         // Backup existing pyproject.toml if it exists
         if pyproject_path.exists() {
+            // Check if backup already exists to avoid overwriting previous backups
+            if backup_path.exists() {
+                return Err(crate::error::Error::FileOperation {
+                    path: backup_path.clone(),
+                    message: "Backup file 'old.pyproject.toml' already exists. Please remove or rename it before running the migration again.".to_string(),
+                });
+            }
             file_tracker.track_rename(&pyproject_path, &backup_path)?;
             std::fs::rename(&pyproject_path, &backup_path).map_err(|e| {
                 crate::error::Error::FileOperation {

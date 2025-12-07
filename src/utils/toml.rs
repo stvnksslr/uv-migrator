@@ -3,9 +3,24 @@ use std::{fs, path::Path};
 use toml_edit::{DocumentMut, Item, Table};
 
 /// Reads a TOML file and returns its content as a DocumentMut.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The file cannot be read
+/// - The file is empty or contains only whitespace
+/// - The TOML content cannot be parsed
 pub fn read_toml(path: &Path) -> Result<DocumentMut, String> {
     let content = fs::read_to_string(path)
         .map_err(|e| format!("Failed to read TOML file '{}': {}", path.display(), e))?;
+
+    // Reject empty files - they parse successfully but cause confusing downstream errors
+    if content.trim().is_empty() {
+        return Err(format!(
+            "TOML file '{}' is empty or contains only whitespace",
+            path.display()
+        ));
+    }
 
     content
         .parse::<DocumentMut>()
@@ -13,7 +28,17 @@ pub fn read_toml(path: &Path) -> Result<DocumentMut, String> {
 }
 
 /// Updates or creates a section in a TOML document.
+///
+/// # Panics
+///
+/// This function will not panic. If the section path is empty or a non-table
+/// value exists at an intermediate path, the function returns early without
+/// making changes.
 pub fn update_section(doc: &mut DocumentMut, section_path: &[&str], content: Item) {
+    if section_path.is_empty() {
+        return;
+    }
+
     let mut current = doc.as_table_mut();
 
     for &section in &section_path[..section_path.len() - 1] {
@@ -22,11 +47,25 @@ pub fn update_section(doc: &mut DocumentMut, section_path: &[&str], content: Ite
             new_table.set_implicit(true);
             current.insert(section, Item::Table(new_table));
         }
-        current = current[section].as_table_mut().unwrap();
+        match current
+            .get_mut(section)
+            .and_then(|item| item.as_table_mut())
+        {
+            Some(table) => current = table,
+            None => {
+                log::warn!(
+                    "Cannot update section: '{}' is not a table in path {:?}",
+                    section,
+                    section_path
+                );
+                return;
+            }
+        }
     }
 
-    let last_section = section_path.last().unwrap();
-    current.insert(last_section, content);
+    if let Some(last_section) = section_path.last() {
+        current.insert(last_section, content);
+    }
 }
 
 /// Writes a TOML document to a file, removing any empty sections first.

@@ -174,6 +174,12 @@ pub fn update_uv_indices_from_urls(project_dir: &Path, urls: &[String]) -> Resul
 
 /// Parses an index specification in the format [name@]url
 /// Returns (name, url) where name is either the specified name or "extra-{index}"
+///
+/// # URL Validation
+///
+/// URLs must start with `http://` or `https://`. If the URL is invalid,
+/// a warning is logged but the URL is still accepted (to avoid breaking
+/// migrations for unusual but valid configurations).
 #[doc(hidden)] // Hide from public docs but make available for tests
 pub fn parse_index_spec(spec: &str, index: usize) -> (String, String) {
     if let Some(at_pos) = spec.find('@') {
@@ -184,13 +190,30 @@ pub fn parse_index_spec(spec: &str, index: usize) -> (String, String) {
 
             // Validate that both parts are non-empty
             if !name.is_empty() && !url.is_empty() {
+                // Warn if URL doesn't look valid
+                if !url.starts_with("http://") && !url.starts_with("https://") {
+                    log::warn!(
+                        "Index URL '{}' does not start with http:// or https://. This may cause issues with UV.",
+                        url
+                    );
+                }
                 return (name, url);
             }
         }
     }
 
     // If no valid name@url format found, treat the whole string as URL
-    (format!("extra-{}", index), spec.to_string())
+    let url = spec.to_string();
+
+    // Warn if URL doesn't look valid
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        log::warn!(
+            "Index URL '{}' does not start with http:// or https://. This may cause issues with UV.",
+            url
+        );
+    }
+
+    (format!("extra-{}", index), url)
 }
 
 /// Appends tool sections from old pyproject.toml to new one

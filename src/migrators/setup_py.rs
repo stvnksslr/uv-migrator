@@ -68,16 +68,21 @@ impl SetupPyMigrationSource {
         let mut bracket_count = 1;
         let mut pos = bracket_start + 1;
 
-        while bracket_count > 0 && pos < content.len() {
-            match content.chars().nth(pos)? {
-                '[' => bracket_count += 1,
-                ']' => bracket_count -= 1,
+        // Use bytes for iteration since find() returns byte indices
+        // This is safe for bracket matching as '[' and ']' are single-byte ASCII
+        let bytes = content.as_bytes();
+        while bracket_count > 0 && pos < bytes.len() {
+            match bytes[pos] {
+                b'[' => bracket_count += 1,
+                b']' => bracket_count -= 1,
                 _ => {}
             }
             pos += 1;
         }
 
         if bracket_count == 0 {
+            // Safe to slice: bracket_start and pos are valid byte boundaries
+            // since we only increment pos by 1 for each ASCII byte
             Some(content[bracket_start + 1..pos - 1].to_string())
         } else {
             None
