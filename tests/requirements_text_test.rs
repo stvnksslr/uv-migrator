@@ -292,6 +292,7 @@ git+https://github.com/user/other-project.git@v1.0.0#egg=other-project
     let source = RequirementsMigrationSource;
     let dependencies = source.extract_dependencies(&project_dir).unwrap();
 
+    // -e flag is stripped and the URL is parsed, so we get all 3 dependencies
     assert_eq!(dependencies.len(), 3);
 }
 
@@ -361,6 +362,205 @@ sqlalchemy
         assert!(dep.version.is_none());
         assert_eq!(dep.dep_type, DependencyType::Main);
     }
+}
+
+/// Test that -r and --requirement flags are skipped
+///
+/// This test verifies that:
+/// 1. Short form (-r) is skipped
+/// 2. Long form (--requirement) is skipped
+/// 3. No-space format (-rfile) is skipped
+/// 4. Equals format (--requirement=file) is skipped
+/// 5. Actual packages are still parsed correctly
+#[test]
+fn test_skip_requirement_flags() {
+    let content = r#"
+-r requirements-base.txt
+numpy==1.24.0
+--requirement requirements-dev.txt
+pandas>=1.5.0
+-rrequirements-test.txt
+scipy==1.10.0
+--requirement=requirements-prod.txt
+matplotlib>=3.7.0
+    "#;
+
+    let (_temp_dir, project_dir) = create_test_project(vec![("requirements.txt", content)]);
+
+    let source = RequirementsMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    // Should only parse the 4 actual packages, not the -r references
+    assert_eq!(dependencies.len(), 4);
+
+    let names: Vec<&str> = dependencies.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"numpy"));
+    assert!(names.contains(&"pandas"));
+    assert!(names.contains(&"scipy"));
+    assert!(names.contains(&"matplotlib"));
+}
+
+/// Test that -c and --constraint flags are skipped
+///
+/// This test verifies that:
+/// 1. Short form (-c) is skipped
+/// 2. Long form (--constraint) is skipped
+/// 3. Actual packages are still parsed correctly
+#[test]
+fn test_skip_constraint_flags() {
+    let content = r#"
+-c constraints.txt
+django>=4.0
+--constraint production-constraints.txt
+flask==2.3.0
+    "#;
+
+    let (_temp_dir, project_dir) = create_test_project(vec![("requirements.txt", content)]);
+
+    let source = RequirementsMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    assert_eq!(dependencies.len(), 2);
+
+    let names: Vec<&str> = dependencies.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"django"));
+    assert!(names.contains(&"flask"));
+}
+
+/// Test that index URL flags are skipped
+///
+/// This test verifies that:
+/// 1. --index-url is skipped
+/// 2. --extra-index-url is skipped
+/// 3. Short form -i is skipped
+/// 4. Actual packages are still parsed correctly
+#[test]
+fn test_skip_index_url_flags() {
+    let content = r#"
+--index-url https://pypi.org/simple
+requests==2.28.0
+--extra-index-url https://custom.repo.com/simple
+-i https://another.index.org/simple
+flask>=2.0.0
+    "#;
+
+    let (_temp_dir, project_dir) = create_test_project(vec![("requirements.txt", content)]);
+
+    let source = RequirementsMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    assert_eq!(dependencies.len(), 2);
+
+    let names: Vec<&str> = dependencies.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"requests"));
+    assert!(names.contains(&"flask"));
+}
+
+/// Test that other pip configuration flags are skipped
+///
+/// This test verifies that:
+/// 1. --pre is skipped
+/// 2. --no-index is skipped
+/// 3. --prefer-binary is skipped
+/// 4. --find-links is skipped
+/// 5. Actual packages are still parsed correctly
+#[test]
+fn test_skip_other_pip_flags() {
+    let content = r#"
+--pre
+numpy==1.24.0
+--no-index
+pandas>=1.5.0
+--prefer-binary
+scipy==1.10.0
+-f https://download.pytorch.org/whl/torch_stable.html
+torch==2.0.0
+    "#;
+
+    let (_temp_dir, project_dir) = create_test_project(vec![("requirements.txt", content)]);
+
+    let source = RequirementsMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    assert_eq!(dependencies.len(), 4);
+
+    let names: Vec<&str> = dependencies.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"numpy"));
+    assert!(names.contains(&"pandas"));
+    assert!(names.contains(&"scipy"));
+    assert!(names.contains(&"torch"));
+}
+
+/// Test mixed pip flags and actual packages
+///
+/// This test verifies that:
+/// 1. Comments are still skipped
+/// 2. Various pip flags are skipped
+/// 3. Only actual packages are extracted
+/// 4. Package count is correct
+#[test]
+fn test_mixed_pip_flags_and_packages() {
+    let content = r#"
+# Development dependencies
+-r requirements-base.txt
+--extra-index-url https://custom.repo.com
+pytest>=7.0
+-e git+https://github.com/user/repo.git#egg=mypackage
+black==23.0.0
+--pre
+mypy>=1.0
+-c constraints.txt
+    "#;
+
+    let (_temp_dir, project_dir) = create_test_project(vec![("requirements.txt", content)]);
+
+    let source = RequirementsMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    // Should extract pytest, black, mypy, and mypackage (from -e git+...)
+    // -r, --extra-index-url, --pre, and -c should all be skipped
+    assert_eq!(dependencies.len(), 4);
+
+    let names: Vec<&str> = dependencies.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"pytest"));
+    assert!(names.contains(&"black"));
+    assert!(names.contains(&"mypy"));
+    assert!(names.contains(&"mypackage"));
+}
+
+/// Test that package names starting with flag letters aren't confused with flags
+///
+/// This test verifies that:
+/// 1. Packages starting with 'r' (like redis, requests, ruff) are parsed
+/// 2. Packages starting with 'c' (like celery, click) are parsed
+/// 3. Packages starting with 'e' (like elasticsearch) are parsed
+/// 4. These packages are not mistaken for pip flags
+#[test]
+fn test_package_names_not_confused_with_flags() {
+    let content = r#"
+redis==4.5.0
+requests==2.28.0
+ruff==0.1.0
+celery==5.3.0
+click>=8.0.0
+elasticsearch>=8.0.0
+    "#;
+
+    let (_temp_dir, project_dir) = create_test_project(vec![("requirements.txt", content)]);
+
+    let source = RequirementsMigrationSource;
+    let dependencies = source.extract_dependencies(&project_dir).unwrap();
+
+    // All 6 packages should be parsed
+    assert_eq!(dependencies.len(), 6);
+
+    let names: Vec<&str> = dependencies.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"redis"));
+    assert!(names.contains(&"requests"));
+    assert!(names.contains(&"ruff"));
+    assert!(names.contains(&"celery"));
+    assert!(names.contains(&"click"));
+    assert!(names.contains(&"elasticsearch"));
 }
 
 #[cfg(test)]

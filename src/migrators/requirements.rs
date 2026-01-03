@@ -141,8 +141,87 @@ impl RequirementsMigrationSource {
         }
     }
 
+    /// Checks if a line matches a pip flag pattern
+    /// Handles: -flag, -flag file, --flag file, --flag=file, -flagvalue
+    fn check_flag_match(line: &str, flag: &str) -> bool {
+        if line == flag {
+            return true; // Exact match (flag alone on line)
+        }
+
+        // For short flags (single dash), match if line starts with flag
+        // Examples: -r, -rfile, -r file, -e, -epath
+        if flag.starts_with('-') && !flag.starts_with("--") {
+            return line.starts_with(flag);
+        }
+
+        // For long flags (double dash), require space or equals separator
+        // Examples: --requirement file, --requirement=file
+        // This prevents matching packages like "requirements" when checking for "--requirement"
+        if line.starts_with(flag) {
+            let rest = &line[flag.len()..];
+            rest.is_empty() || rest.starts_with(' ') || rest.starts_with('=')
+        } else {
+            false
+        }
+    }
+
+    /// Checks if a line is a pip configuration flag that should be skipped
+    fn is_pip_config_flag(line: &str) -> bool {
+        let trimmed = line.trim();
+
+        // Priority flags (log at INFO with helpful hints)
+        let priority_flags = [
+            ("-r", "nested files are discovered automatically"),
+            ("--requirement", "nested files are discovered automatically"),
+            ("-c", "constraints may need manual migration"),
+            ("--constraint", "constraints may need manual migration"),
+            ("-i", "use --import-index flag instead"),
+            ("--index-url", "use --import-index flag instead"),
+            ("--extra-index-url", "use --import-index flag instead"),
+        ];
+
+        for (flag, hint) in &priority_flags {
+            if Self::check_flag_match(trimmed, flag) {
+                info!("Skipping pip configuration '{}': {}", trimmed, hint);
+                return true;
+            }
+        }
+
+        // Other flags (log at DEBUG)
+        // Note: -e/--editable are NOT in this list because they're handled
+        // separately in parse_requirement() to extract the package info
+        let other_flags = [
+            "-f",
+            "--find-links",
+            "--trusted-host",
+            "--no-index",
+            "--pre",
+            "--prefer-binary",
+            "--require-hashes",
+            "--only-binary",
+            "--no-binary",
+        ];
+
+        for flag in &other_flags {
+            if Self::check_flag_match(trimmed, flag) {
+                debug!("Skipping pip configuration flag: {}", trimmed);
+                return true;
+            }
+        }
+
+        false
+    }
+
     fn parse_requirement(&self, line: &str) -> Result<Option<Dependency>> {
+        let line = line.trim();
+
+        // Skip pip configuration flags FIRST
+        if Self::is_pip_config_flag(line) {
+            return Ok(None);
+        }
+
         // Handle editable installs (-e flag)
+        // Note: -e is also caught by is_pip_config_flag, but keeping this for clarity
         let line = if line.starts_with("-e") {
             let parts: Vec<&str> = line.splitn(2, ' ').collect();
             if parts.len() != 2 {
