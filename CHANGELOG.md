@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [2025.10.0](https://github.com/stvnksslr/uv-migrator/compare/v2025.9.0...v2025.10.0) - 2026-01-03
+
+### Added
+- *(fixes for parsing + test gaps for poetry)* ([#83](https://github.com/stvnksslr/uv-migrator/pull/83)) (by @stvnksslr)
+
+### Fixed
+- *(requirements)* skip pip configuration flags in requirements files ([#85](https://github.com/stvnksslr/uv-migrator/pull/85)) (by @itsbrex)
+
+### Contributors
+
+* @itsbrex
+* @stvnksslr
 ## [2025.9.0](https://github.com/stvnksslr/uv-migrator/compare/v2025.8.3...v2025.9.0) - 2025-10-06
 
 ### Added
